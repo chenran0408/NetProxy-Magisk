@@ -176,15 +176,47 @@
         "type": "remote",
         "tag": "Ads_AWAvenue",
         "format": "source",
-        "url": "https://raw.githubusercontent.com/TG-Twilight/AWAvenue-Ads-Rule/main/Filters/AWAvenue-Ads-Rule-Singbox.json",
+        "url": "https://raw.githubusercontent.com/TG-Twilight/AWAvenue-Ads-Rule/a5599253ba5240e1c8dc60dfc9ddade8e7b96c79/Filters/AWAvenue-Ads-Rule-Singbox.json",
         "update_interval": "24h",
         "path": "./rules/remote/Ads_AWAvenue.json"
       },
       {
         "type": "remote",
-        "tag": ["geosite/category-ads-all", "geosite/apple-cn", "geosite/category-ai-!cn", "geosite/google", "geosite/geolocation-!cn", "geosite/cn", "geoip/cn", "geoip/telegram"],
+        "tag": ["geosite/category-ads-all", "geosite/geolocation-!cn", "geoip/cn"],
         "format": "binary",
-        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/{tag}.srs",
+        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/d9e3c4c09747d325d28e9bfe8829011135cfbbbf/geo/{tag}.srs",
+        "update_interval": "24h",
+        "path": "./rules/remote/{tag}.srs"
+      },
+      {
+        "type": "remote",
+        "tag": ["geosite/apple-cn"],
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/ff12703ce5252a6b54298a835729f3abdd61ba6e/geo/{tag}.srs",
+        "update_interval": "24h",
+        "path": "./rules/remote/{tag}.srs"
+      },
+      {
+        "type": "remote",
+        "tag": ["geosite/category-ai-!cn", "geosite/google", "geosite/cn"],
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/1bbe90f849505bcbcea530d8fbc127ad7877eb2a/geo/{tag}.srs",
+        "update_interval": "24h",
+        "path": "./rules/remote/{tag}.srs"
+      },
+      {
+        "type": "remote",
+        "tag": ["geosite/youtube", "geosite/tiktok", "geosite/netflix", "geosite/github"],
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/d9e3c4c09747d325d28e9bfe8829011135cfbbbf/geo/{tag}.srs",
+        "update_interval": "24h",
+        "path": "./rules/remote/{tag}.srs"
+      },
+      {
+        "type": "remote",
+        "tag": ["geoip/telegram"],
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/0b3efbf6fc8076742c2dd36eddb8791c8121aa71/geo/{tag}.srs",
         "update_interval": "24h",
         "path": "./rules/remote/{tag}.srs"
       }

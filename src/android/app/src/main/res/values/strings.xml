@@ -50,6 +50,12 @@
     <string name="dashboard_service_stopped">Service stopped</string>
     <string name="dashboard_mode_changed">Outbound mode changed</string>
     <string name="nodes">Nodes</string>
+    <string name="policies">Policies</string>
+    <string name="policies_loading">Loading policies…</string>
+    <string name="policy_empty">No policies available</string>
+    <string name="policy_auto">Auto</string>
+    <string name="policy_group">Group: %1$s</string>
+    <string name="policy_test">Test nodes</string>
     <string name="latency_testing">Testing…</string>
     <string name="latency_failed">Test failed</string>
     <string name="latency_timeout">Timeout</string>
@@ -355,8 +361,8 @@
     <string name="ebpf_data_paths_both">Local and shared networks</string>
     <string name="ebpf_local_settings">Local network</string>
     <string name="ebpf_data_plane">Data plane</string>
-    <string name="ebpf_data_plane_socket_assign">socket_assign (recommended)</string>
-    <string name="ebpf_data_plane_cgroup">cgroup (compatibility)</string>
+    <string name="ebpf_data_plane_socket_assign">socket_assign (experimental)</string>
+    <string name="ebpf_data_plane_cgroup">cgroup (recommended)</string>
     <string name="ebpf_data_plane_packet_rewrite">packet_rewrite (compatibility)</string>
     <string name="ebpf_shared_default_interface">Keep shared interception on the default upstream</string>
     <string name="ebpf_shared_default_interface_hint">Off by default. For single-interface gateways only: keep configured shared interfaces attached when they become the default upstream. Does not enable forwarding, NAT or hotspot services.</string>

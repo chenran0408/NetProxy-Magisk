@@ -9,7 +9,7 @@ class InboundJsonTest {
     @Test fun ebpfMissingAndEmptyDataPlanesUseModuleDefaultWithoutWritingIt() {
         for (content in listOf("{}", """{"data_plane":""}""")) {
             val original = inboundJson.parseToJsonElement(content).jsonObject
-            assertEquals("socket_assign", original.ebpfDataPlane())
+            assertEquals("cgroup", original.ebpfDataPlane())
             assertEquals(content, original.toString())
         }
         for (plane in listOf("socket_assign", "cgroup", "packet_rewrite", "tc", " ")) {

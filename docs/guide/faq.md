@@ -25,6 +25,12 @@ su -c '/data/adb/modules/netproxy/netproxyctl logs show core 100'
 
 eBPF 的 `local.bypass_rule_set`、`shared.bypass_rule_set`、私网绕过和应用名单可以在普通路由前放行；TUN 的原生路由范围、接口和地址排除也会影响接管。`Proxy` 模式只处理已进入 sing-box 的流量；测试时检查实际后端的绕过与筛选并重启核心，而不是只修改出站模式。
 
+## ChatGPT 提示网络提供了非预期 SSL 证书
+
+这表示 ChatGPT 收到的服务器证书与预期不符，不是 sing-box 可以安全忽略的错误。NetProxy 不解密 HTTPS，也不应通过关闭证书校验来绕过它。默认规则会将非中国 AI 网站送入代理；如果仍遇到此提示，先切换另一个可信节点或网络，并确认出站代理、公司网络、路由器或其他安全软件没有开启 HTTPS/SSL 检查或替换证书。检查设备日期和时间是否正确；若只在某个 Wi-Fi 出现，也先在浏览器打开普通网页完成该网络的登录认证。
+
+如果仅 ChatGPT 失败，检查是否在 `Direct` 模式、分应用策略是否让 ChatGPT 直连，以及自定义 `direct`/`block` 规则是否覆盖 OpenAI 域名。修正规则后重载服务再试。不要安装来源不明的根证书，也不要关闭应用或系统的 TLS 证书校验；如果不同可信网络和节点下都失败，联系网络管理员或向 ChatGPT 支持反馈。
+
 ## 升级提示缺少 module.json 或 inbound.json
 
 保留全数据要求当前 `config/module.json`、`config/inbound/inbound.json`、主配置与 Catalog 完整。旧格式用户只能选择“仅保留节点与订阅”或“全新安装”；前者保留 Catalog 与日志、恢复默认配置。安装器不检测版本、不读取或迁移旧格式，也不静默补默认。

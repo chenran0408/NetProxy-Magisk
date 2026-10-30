@@ -17,6 +17,7 @@ import (
 	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/inbound"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/policy"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/serviceapi"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
@@ -83,6 +84,7 @@ type PrepareResult struct {
 	Providers string             `json:"providers"`
 	Outbounds string             `json:"outbounds"`
 	Inbound   string             `json:"inbound"`
+	Policy    string             `json:"policy"`
 	Backend   string             `json:"backend"`
 	Network   *NetworkEvaluation `json:"-"`
 }
@@ -145,6 +147,48 @@ func Prepare(ctx context.Context, options Options, allowEmpty bool) (PrepareResu
 	if err != nil {
 		return PrepareResult{}, err
 	}
+	policyFile := filepath.Join(filepath.Dir(options.StateFile), "policies.json")
+	policies, err := policy.Load(ctx, policyFile)
+	if err != nil {
+		return PrepareResult{}, err
+	}
+	groups, err := catalog.Scan(ctx, catalog.ScanOptions{Root: options.CatalogRoot, Type: "all", WithNodes: true})
+	if err != nil {
+		return PrepareResult{}, err
+	}
+	groupByID := make(map[string]catalog.GroupSnapshot, len(groups))
+	for _, group := range groups {
+		groupByID[group.Group.ID] = group
+	}
+	selectionChanged := false
+	for index, item := range policies {
+		group, ok := groupByID[item.GroupID]
+		if item.Mode != "manual" || !ok {
+			if item.Mode == "manual" && !ok {
+				policies[index].Mode, policies[index].NodeTag, selectionChanged = "auto", "", true
+			}
+			continue
+		}
+		found := false
+		for _, node := range group.Nodes {
+			if node.Tag == item.NodeTag {
+				found = true
+				break
+			}
+		}
+		if !found {
+			policies[index].Mode, policies[index].NodeTag, selectionChanged = "auto", "", true
+		}
+	}
+	if selectionChanged {
+		if err := policy.Save(ctx, policyFile, policies); err != nil {
+			return PrepareResult{}, err
+		}
+	}
+	policyPath := filepath.Join(options.RuntimeDir, "policies.json")
+	if _, err := policy.BuildRuntime(ctx, policyPath, options.CatalogRoot, policies); err != nil {
+		return PrepareResult{}, err
+	}
 	network, err := configuredNetwork(ctx, options)
 	if err != nil {
 		return PrepareResult{}, err
@@ -165,7 +209,7 @@ func Prepare(ctx context.Context, options Options, allowEmpty bool) (PrepareResu
 	for _, ref := range missingPackages {
 		logService(options, "WARN", "inbound.package", "skipped", "分应用代理跳过未安装应用: %s", ref.String())
 	}
-	return PrepareResult{RuntimeResult: runtime, Providers: providers, Outbounds: outbounds, Inbound: inboundPath, Backend: config.Backend, Network: &network}, nil
+	return PrepareResult{RuntimeResult: runtime, Providers: providers, Outbounds: outbounds, Inbound: inboundPath, Policy: policyPath, Backend: config.Backend, Network: &network}, nil
 }
 
 func (options Options) updateSelection(ctx context.Context, selection moduleconfig.Selection) error {

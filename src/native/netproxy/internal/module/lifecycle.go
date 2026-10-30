@@ -513,8 +513,14 @@ func newSingBoxCommand(options Options, prepared PrepareResult) (*exec.Cmd, *os.
 	if err != nil {
 		return nil, nil, err
 	}
-	command := exec.Command(options.SingBoxPath, "run", "--disable-color", "-c", paths.SingBoxConfig(options.SingBoxDir),
-		"-c", prepared.Providers, "-c", prepared.Outbounds, "-c", prepared.Inbound)
+	args := []string{"run", "--disable-color"}
+	if prepared.Policy != "" {
+		if _, err := os.Stat(prepared.Policy); err == nil {
+			args = append(args, "-c", prepared.Policy)
+		}
+	}
+	args = append(args, "-c", paths.SingBoxConfig(options.SingBoxDir), "-c", prepared.Providers, "-c", prepared.Outbounds, "-c", prepared.Inbound)
+	command := exec.Command(options.SingBoxPath, args...)
 	command.Dir = options.SingBoxDir
 	command.Stdout = logFile
 	command.Stderr = logFile
@@ -523,8 +529,14 @@ func newSingBoxCommand(options Options, prepared PrepareResult) (*exec.Cmd, *os.
 }
 
 func checkPreparedConfiguration(ctx context.Context, options Options, prepared PrepareResult) error {
-	command := exec.CommandContext(ctx, options.SingBoxPath, "check", "--disable-color", "-c", paths.SingBoxConfig(options.SingBoxDir),
-		"-c", prepared.Providers, "-c", prepared.Outbounds, "-c", prepared.Inbound)
+	args := []string{"check", "--disable-color"}
+	if prepared.Policy != "" {
+		if _, err := os.Stat(prepared.Policy); err == nil {
+			args = append(args, "-c", prepared.Policy)
+		}
+	}
+	args = append(args, "-c", paths.SingBoxConfig(options.SingBoxDir), "-c", prepared.Providers, "-c", prepared.Outbounds, "-c", prepared.Inbound)
+	command := exec.CommandContext(ctx, options.SingBoxPath, args...)
 	command.Dir = options.SingBoxDir
 	command.Stdout = os.Stderr
 	command.Stderr = os.Stderr

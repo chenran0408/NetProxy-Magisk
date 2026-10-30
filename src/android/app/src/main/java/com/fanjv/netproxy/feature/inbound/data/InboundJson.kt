@@ -19,7 +19,7 @@ internal fun JsonObject.textAt(key: String, default: String = ""): String =
 internal fun JsonObject.flagAt(key: String, default: Boolean = false): Boolean =
     (this[key] as? JsonPrimitive)?.booleanOrNull ?: default
 internal fun JsonObject.ebpfDnsMode(): String = textAt("dns_mode").ifBlank { "respect_policy" }
-internal fun JsonObject.ebpfDataPlane(): String = textAt("data_plane").ifEmpty { "socket_assign" }
+internal fun JsonObject.ebpfDataPlane(): String = textAt("data_plane").ifEmpty { "cgroup" }
 internal fun JsonObject.tunDnsMode(): String = textAt("dns_mode").ifEmpty { "hijack" }
 internal fun JsonObject.listAt(key: String): List<String> = when (val value = this[key]) {
     is JsonArray -> value.map { (it as JsonPrimitive).content }

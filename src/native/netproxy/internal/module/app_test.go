@@ -22,6 +22,7 @@ import (
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
 	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/policy"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/serviceapi"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/worker"
@@ -89,6 +90,39 @@ func TestSelectNodeStoppedKeepsTwoFieldStateAndPublicResult(t *testing.T) {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			t.Fatalf("停止时选节点改变了服务、Worker 或 runtime: %s %v", path, err)
 		}
+	}
+}
+
+func TestPrepareWritesPolicyOverlayAlongsideCatalogRuntime(t *testing.T) {
+	options := selectionFixture(t)
+	if err := os.MkdirAll(options.SingBoxDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(options.SingBoxDir, "config.json"), []byte(`{"route":{"rules":[]}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(options.InboundConfig), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(options.InboundConfig, []byte(testInboundConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	items := policy.Defaults()
+	items[0].Mode = "manual"
+	items[0].NodeTag = "NODE"
+	if err := policy.Save(t.Context(), filepath.Join(filepath.Dir(options.StateFile), "policies.json"), items); err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := Prepare(t.Context(), options, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(prepared.Policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(content), `"outbound":"本地配置/NODE"`) || !strings.Contains(string(content), `"rule_set":["geosite/category-ai-!cn"]`) {
+		t.Fatalf("策略 overlay 未进入 Prepare 结果: %s", content)
 	}
 }
 

@@ -178,6 +178,43 @@ func TestResourcesReadWhileCoreStopped(t *testing.T) {
 	}
 }
 
+func TestResourcesPolicyListSaveAndValidation(t *testing.T) {
+	server := resourceFixture(t)
+	response, result := resourceRequest(t, server, "GET", "/api/v1/policies", "")
+	if response.Code != http.StatusOK || result.Code != "policy.list" || !strings.Contains(string(result.Data), `"schema":1`) {
+		t.Fatalf("策略列表契约不符: %s", response.Body.String())
+	}
+	if !strings.Contains(string(result.Data), `"id":"ai"`) || !strings.Contains(string(result.Data), `"group_id":"default"`) {
+		t.Fatalf("策略列表遗漏默认策略或可用组: %s", response.Body.String())
+	}
+	resourceAssertSuccess(t, server, "PUT", "/api/v1/policies/ai", `{"group_id":"default","node_tag":"节点 / 02","mode":"manual"}`, "policy.saved", nil)
+	stored, err := os.ReadFile(filepath.Join(filepath.Dir(server.options.StateFile), "policies.json"))
+	if err != nil || !strings.Contains(string(stored), `"node_tag":"节点 / 02"`) || !strings.Contains(string(stored), `"mode":"manual"`) {
+		t.Fatalf("手动策略未持久化: %s, %v", stored, err)
+	}
+	resourceAssertSuccess(t, server, "PUT", "/api/v1/policies/ai", `{"group_id":"default","node_tag":"","mode":"auto"}`, "policy.saved", nil)
+	stored, err = os.ReadFile(filepath.Join(filepath.Dir(server.options.StateFile), "policies.json"))
+	if err != nil || !strings.Contains(string(stored), `"mode":"auto"`) || !strings.Contains(string(stored), `"node_tag":""`) {
+		t.Fatalf("Auto 选择未持久化: %s, %v", stored, err)
+	}
+	response, result = resourceRequest(t, server, "PUT", "/api/v1/policies/missing", `{"group_id":"default","node_tag":"","mode":"auto"}`)
+	if response.Code != http.StatusNotFound || result.Code != "policy.not_found" {
+		t.Fatalf("未知策略错误契约不符: %s", response.Body.String())
+	}
+	response, result = resourceRequest(t, server, "PUT", "/api/v1/policies/ai", `{"group_id":"default","node_tag":"","mode":"selective"}`)
+	if response.Code != http.StatusBadRequest || result.Code != "usage.invalid" {
+		t.Fatalf("非法策略模式未被拒绝: %s", response.Body.String())
+	}
+	response, result = resourceRequest(t, server, "PUT", "/api/v1/policies/ai", `{"group_id":"missing","node_tag":"","mode":"auto"}`)
+	if response.Code != http.StatusBadRequest || result.Code != "usage.invalid" {
+		t.Fatalf("不存在的策略分组未被拒绝: %s", response.Body.String())
+	}
+	response, result = resourceRequest(t, server, "PUT", "/api/v1/policies/ai", `{"group_id":"default","node_tag":"missing","mode":"manual"}`)
+	if response.Code != http.StatusBadRequest || result.Code != "usage.invalid" {
+		t.Fatalf("不存在的策略节点未被拒绝: %s", response.Body.String())
+	}
+}
+
 func TestResourcesNodeTagsPreserveSlashes(t *testing.T) {
 	server := resourceFixture(t)
 	query := url.Values{"group_id": {"default"}, "node_tag": {"节点 / 02"}}.Encode()

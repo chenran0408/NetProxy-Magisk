@@ -1,0 +1,203 @@
+package policy
+
+import (
+	"context"
+	json "encoding/json/v2"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
+)
+
+// Policy is the small, user-facing selection stored independently of the
+// Catalog. Runtime generation can later project these selections without
+// changing provider data.
+type Policy struct {
+	ID         string   `json:"id"`
+	Name       string   `json:"name"`
+	Icon       string   `json:"icon"`
+	Type       string   `json:"type"`
+	RuleSets   []string `json:"rule_sets"`
+	GroupID    string   `json:"group_id"`
+	NodeTag    string   `json:"node_tag"`
+	Mode       string   `json:"mode"`
+	RuntimeTag string   `json:"runtime_tag"`
+}
+
+type file struct {
+	Schema   int      `json:"schema"`
+	Policies []Policy `json:"policies"`
+}
+
+func Defaults() []Policy {
+	return []Policy{
+		{ID: "ai", Name: "AI", Icon: "AI", Type: "domain", RuleSets: []string{"geosite/category-ai-!cn"}, GroupID: "default", Mode: "auto", RuntimeTag: "Proxy"},
+		{ID: "youtube", Name: "YouTube", Icon: "YT", Type: "domain", RuleSets: []string{"geosite/youtube"}, GroupID: "default", Mode: "auto", RuntimeTag: "Proxy"},
+		{ID: "tiktok", Name: "TikTok", Icon: "TK", Type: "domain", RuleSets: []string{"geosite/tiktok"}, GroupID: "default", Mode: "auto", RuntimeTag: "Proxy"},
+		{ID: "netflix", Name: "Netflix", Icon: "NF", Type: "domain", RuleSets: []string{"geosite/netflix"}, GroupID: "default", Mode: "auto", RuntimeTag: "Proxy"},
+		{ID: "github", Name: "GitHub", Icon: "GH", Type: "domain", RuleSets: []string{"geosite/github"}, GroupID: "default", Mode: "auto", RuntimeTag: "Proxy"},
+		{ID: "google", Name: "Google", Icon: "G", Type: "domain", RuleSets: []string{"geosite/google"}, GroupID: "default", Mode: "auto", RuntimeTag: "Proxy"},
+	}
+}
+
+func Load(ctx context.Context, path string) ([]Policy, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+	content, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return Defaults(), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var stored file
+	if err := json.Unmarshal(content, &stored); err != nil {
+		return nil, fmt.Errorf("读取策略配置: %w", err)
+	}
+	if stored.Schema != 1 {
+		return nil, fmt.Errorf("策略配置 schema 无效: %d", stored.Schema)
+	}
+	return mergeDefaults(stored.Policies), nil
+}
+
+func Save(ctx context.Context, path string, policies []Policy) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+	if len(policies) == 0 {
+		return errors.New("策略列表不能为空")
+	}
+	content, err := json.Marshal(file{Schema: 1, Policies: policies}, json.Deterministic(true))
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	return writeAtomic(path, append(content, '\n'))
+}
+
+func mergeDefaults(stored []Policy) []Policy {
+	byID := make(map[string]Policy, len(stored))
+	for _, item := range stored {
+		byID[item.ID] = item
+	}
+	result := make([]Policy, 0, len(Defaults()))
+	for _, item := range Defaults() {
+		if saved, ok := byID[item.ID]; ok {
+			result = append(result, saved)
+		} else {
+			result = append(result, item)
+		}
+	}
+	return result
+}
+
+func Find(policies []Policy, id string) (Policy, bool) {
+	for _, item := range policies {
+		if item.ID == id {
+			return item, true
+		}
+	}
+	return Policy{}, false
+}
+
+func Validate(value Policy) error {
+	if strings.TrimSpace(value.ID) == "" || strings.TrimSpace(value.Name) == "" {
+		return errors.New("策略 ID 和名称不能为空")
+	}
+	if value.Mode != "auto" && value.Mode != "manual" {
+		return errors.New("策略模式必须为 auto 或 manual")
+	}
+	if value.GroupID == "" {
+		return errors.New("策略分组不能为空")
+	}
+	if value.Mode == "manual" && value.NodeTag == "" {
+		return errors.New("手动策略必须选择节点")
+	}
+	return nil
+}
+
+// BuildRuntime writes only route rules. Provider and outbound definitions stay
+// owned by Catalog, while this overlay is passed to sing-box as another -c
+// source during service start/check.
+func BuildRuntime(ctx context.Context, path, catalogRoot string, policies []Policy) (bool, error) {
+	groups, err := catalog.Scan(ctx, catalog.ScanOptions{Root: catalogRoot, Type: "all", WithNodes: true})
+	if err != nil {
+		return false, err
+	}
+	byID := make(map[string]catalog.GroupSnapshot, len(groups))
+	for _, group := range groups {
+		byID[group.Group.ID] = group
+	}
+	rules := make([]map[string]any, 0, len(policies))
+	for _, item := range policies {
+		group, ok := byID[item.GroupID]
+		if !ok || len(group.Nodes) == 0 {
+			continue
+		}
+		target := "Auto/" + group.Group.RuntimeTag
+		if item.Mode == "manual" {
+			found := false
+			for _, node := range group.Nodes {
+				if node.Tag == item.NodeTag {
+					target = group.Group.RuntimeTag + "/" + node.Tag
+					found = true
+					break
+				}
+			}
+			if !found {
+				target = "Auto/" + group.Group.RuntimeTag
+			}
+		}
+		rules = append(rules, map[string]any{
+			"rule_set": item.RuleSets,
+			"action":   "route",
+			"outbound": target,
+		})
+	}
+	if len(rules) == 0 {
+		_ = os.Remove(path)
+		return false, nil
+	}
+	content, err := json.Marshal(map[string]any{"route": map[string]any{"rules": rules}}, json.Deterministic(true))
+	if err != nil {
+		return false, err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return false, err
+	}
+	if err := writeAtomic(path, append(content, '\n')); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func writeAtomic(path string, content []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".policies-")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(content); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
+}

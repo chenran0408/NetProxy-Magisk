@@ -37,6 +37,9 @@ test('默认配置仅保留部署、运行时生成、模式命名与原生 DNS 
   for (const rule of expected.route.rule_set) {
     rule.path = rule.path.replace('./source/rule_set/', './rules/remote/').replace('./source/', './rules/local/')
   }
+  // Remote rule sources are pinned per generated resource commit.
+  expected.route.rule_set = expected.route.rule_set.filter(rule => rule.type !== 'remote')
+    .concat(structuredClone(config.route.rule_set.filter(rule => rule.type === 'remote')))
   const renameModes = rules => {
     for (const rule of rules) {
       if (rule.clash_mode === 'Global') rule.clash_mode = 'Proxy'
@@ -86,6 +89,13 @@ test('默认远程规则有对应的内置文件与更新来源', () => {
   }
 })
 
+test('策略卡片使用的服务规则集已随模块预置', () => {
+  const tags = new Set(config.route.rule_set.flatMap(rule => list(rule.tag)))
+  for (const tag of ['geosite/youtube', 'geosite/tiktok', 'geosite/netflix', 'geosite/github']) {
+    assert.ok(tags.has(tag), `${tag} 未在默认远程规则中声明`)
+  }
+})
+
 test('eBPF 默认绕过引用与上游和静态规则一致', () => {
   const localBypass = managed.ebpf.local.bypass_rule_set
   const sharedBypass = managed.ebpf.shared.bypass_rule_set
@@ -105,7 +115,7 @@ test('单一入站默认保留 eBPF 原生语义和禁用共享路径偏好', ()
   assert.deepEqual(managed.ebpf, {
     type: 'ebpf', tag: 'netproxy-in', network: ['tcp', 'udp'], udp_timeout: '5m', tc_priority: 1,
     local: {
-      enabled: true, data_plane: 'socket_assign', dns_mode: 'respect_policy', ipv6: true,
+      enabled: true, data_plane: 'cgroup', dns_mode: 'respect_policy', ipv6: true,
       bypass_private_address: true, bypass_rule_set: ['geoip/cn'],
     },
     shared: {

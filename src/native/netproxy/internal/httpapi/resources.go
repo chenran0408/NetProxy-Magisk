@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -17,6 +18,7 @@ import (
 	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/contract"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/module"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/policy"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
@@ -51,6 +53,9 @@ func (s *Server) registerResources() {
 	s.route("DELETE /api/v1/nodes", resourceWriteTimeout, true, s.removeNode)
 	s.route("POST /api/v1/nodes/import", resourceWriteTimeout, true, s.importNodes)
 	s.route("POST /api/v1/nodes/delay", resourceWriteTimeout, true, s.delayNodes)
+	s.route("GET /api/v1/policies", resourceReadTimeout, false, s.readPolicies)
+	s.route("PUT /api/v1/policies/{id}", resourceWriteTimeout, true, s.savePolicy)
+	s.route("POST /api/v1/policies/{id}/url-test", resourceWriteTimeout, true, s.testPolicy)
 	s.route("GET /api/v1/selection", resourceReadTimeout, false, s.readSelection)
 	s.route("PUT /api/v1/selection", resourceWriteTimeout, false, s.saveSelection)
 	s.route("GET /api/v1/mode", resourceReadTimeout, false, s.readMode)
@@ -74,6 +79,138 @@ func (s *Server) registerResources() {
 	s.route("POST /api/v1/diagnostics/ebpf", resourceWriteTimeout, true, s.probeEBPF)
 	s.route("GET /api/v1/logs", resourceReadTimeout, false, s.readLogs)
 	s.route("DELETE /api/v1/logs", resourceReadTimeout, false, s.clearLogs)
+}
+
+type policyView struct {
+	policy.Policy
+	Groups        []catalog.GroupSnapshot `json:"groups"`
+	Persisted     bool                    `json:"persisted"`
+	RuntimeSynced bool                    `json:"runtime_synced"`
+}
+
+func (s *Server) policyPath() string {
+	return filepath.Join(filepath.Dir(s.options.StateFile), "policies.json")
+}
+
+func (s *Server) readPolicies(ctx context.Context, r *http.Request) (contract.Result, error) {
+	if _, err := resourceQuery(r); err != nil {
+		return contract.Result{}, err
+	}
+	items, err := policy.Load(ctx, s.policyPath())
+	if err != nil {
+		return contract.Result{}, err
+	}
+	groups, err := catalog.Scan(ctx, catalog.ScanOptions{Root: s.options.CatalogRoot, Type: "all", ProgressDir: s.options.ProgressDir, WithNodes: true})
+	if err != nil {
+		return contract.Result{}, err
+	}
+	result := make([]policyView, 0, len(items))
+	runtimeSynced := service.ProcessRunning(s.options.SingBoxPath)
+	for _, item := range items {
+		result = append(result, policyView{Policy: item, Groups: groups, Persisted: true, RuntimeSynced: runtimeSynced})
+	}
+	return contract.Success("policy.list", "策略列表", map[string]any{"policies": result, "schema": 1}), nil
+}
+
+func (s *Server) savePolicy(ctx context.Context, r *http.Request) (contract.Result, error) {
+	var input struct {
+		GroupID string `json:"group_id"`
+		NodeTag string `json:"node_tag"`
+		Mode    string `json:"mode"`
+	}
+	if err := resourceDecode(r, &input); err != nil {
+		return contract.Result{}, err
+	}
+	items, err := policy.Load(ctx, s.policyPath())
+	if err != nil {
+		return contract.Result{}, err
+	}
+	id := r.PathValue("id")
+	current, found := policy.Find(items, id)
+	if !found {
+		return contract.Result{}, &contract.Error{Code: "policy.not_found", Message: "策略不存在", HTTPStatus: http.StatusNotFound}
+	}
+	if input.GroupID != "" {
+		current.GroupID = input.GroupID
+	}
+	current.NodeTag = input.NodeTag
+	if input.Mode != "" {
+		current.Mode = input.Mode
+	} else if current.NodeTag == "" {
+		current.Mode = "auto"
+	} else {
+		current.Mode = "manual"
+	}
+	if err := resourceGroupID(current.GroupID, false); err != nil {
+		return contract.Result{}, err
+	}
+	if err := policy.Validate(current); err != nil {
+		return contract.Result{}, invalid(err.Error())
+	}
+	if err := validatePolicyTarget(ctx, s.options.CatalogRoot, current); err != nil {
+		return contract.Result{}, invalid(err.Error())
+	}
+	for index := range items {
+		if items[index].ID == id {
+			items[index] = current
+		}
+	}
+	if err := policy.Save(ctx, s.policyPath(), items); err != nil {
+		return contract.Result{}, err
+	}
+	runtimeSynced := false
+	if service.ProcessRunning(s.options.SingBoxPath) {
+		if _, err := module.ManageService(ctx, s.options, "reload"); err != nil {
+			return contract.Result{}, &service.Error{Code: "policy.runtime_sync_failed", Message: fmt.Sprintf("策略已保存，但运行时同步失败: %v", err), Data: map[string]any{"policy": current, "persisted": true, "runtime_synced": false}}
+		}
+		runtimeSynced = true
+	}
+	return contract.Success("policy.saved", "策略已保存", map[string]any{"policy": current, "persisted": true, "runtime_synced": runtimeSynced}), nil
+}
+
+func validatePolicyTarget(ctx context.Context, root string, item policy.Policy) error {
+	groups, err := catalog.Scan(ctx, catalog.ScanOptions{Root: root, Type: "all", WithNodes: true})
+	if err != nil {
+		return fmt.Errorf("读取策略分组失败: %w", err)
+	}
+	for _, group := range groups {
+		if group.Group.ID != item.GroupID {
+			continue
+		}
+		if len(group.Nodes) == 0 {
+			return errors.New("策略分组没有可用节点")
+		}
+		if item.Mode != "manual" {
+			return nil
+		}
+		for _, node := range group.Nodes {
+			if node.Tag == item.NodeTag {
+				return nil
+			}
+		}
+		return errors.New("策略节点不存在或已失效")
+	}
+	return errors.New("策略分组不存在或已失效")
+}
+
+func (s *Server) testPolicy(ctx context.Context, r *http.Request) (contract.Result, error) {
+	if err := resourceEmptyRequest(r); err != nil {
+		return contract.Result{}, err
+	}
+	items, err := policy.Load(ctx, s.policyPath())
+	if err != nil {
+		return contract.Result{}, err
+	}
+	item, found := policy.Find(items, r.PathValue("id"))
+	if !found {
+		return contract.Result{}, &contract.Error{Code: "policy.not_found", Message: "策略不存在", HTTPStatus: http.StatusNotFound}
+	}
+	target := "auto"
+	if item.Mode == "manual" && item.NodeTag != "" {
+		target = item.GroupID + "/" + item.NodeTag
+	}
+	data, err := service.Delay(ctx, s.controlOptions(), target, item.GroupID)
+	return contract.Success("policy.url_test", "策略节点测速完成", data), err
 }
 
 func (s *Server) readService(ctx context.Context, r *http.Request) (contract.Result, error) {
