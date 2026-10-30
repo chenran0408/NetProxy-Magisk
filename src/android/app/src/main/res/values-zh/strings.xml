@@ -64,6 +64,11 @@
     <string name="policy_auto">自动</string>
     <string name="policy_group">策略组：%1$s</string>
     <string name="policy_test">测速</string>
+    <string name="policy_runtime_active">服务运行中</string>
+    <string name="policy_runtime_inactive">服务未运行，启动后应用策略</string>
+    <string name="policy_node_not_tested">未测速</string>
+    <string name="policy_node_healthy">可用</string>
+    <string name="policy_node_unhealthy">测速失败</string>
     <string name="latency_testing">测试中…</string>
     <string name="latency_failed">测试失败</string>
     <string name="latency_timeout">超时</string>

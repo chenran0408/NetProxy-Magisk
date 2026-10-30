@@ -56,6 +56,11 @@
     <string name="policy_auto">Авто</string>
     <string name="policy_group">Группа: %1$s</string>
     <string name="policy_test">Проверить узлы</string>
+    <string name="policy_runtime_active">Служба запущена</string>
+    <string name="policy_runtime_inactive">Служба остановлена; стратегия применится при запуске</string>
+    <string name="policy_node_not_tested">Не проверен</string>
+    <string name="policy_node_healthy">Доступен</string>
+    <string name="policy_node_unhealthy">Проверка не пройдена</string>
     <string name="latency_testing">Проверка…</string>
     <string name="latency_failed">Ошибка проверки</string>
     <string name="latency_timeout">Тайм-аут</string>

@@ -56,6 +56,11 @@
     <string name="policy_auto">Auto</string>
     <string name="policy_group">Group: %1$s</string>
     <string name="policy_test">Test nodes</string>
+    <string name="policy_runtime_active">Service running</string>
+    <string name="policy_runtime_inactive">Service stopped; changes apply on start</string>
+    <string name="policy_node_not_tested">Not tested</string>
+    <string name="policy_node_healthy">Available</string>
+    <string name="policy_node_unhealthy">Test failed</string>
     <string name="latency_testing">Testing…</string>
     <string name="latency_failed">Test failed</string>
     <string name="latency_timeout">Timeout</string>

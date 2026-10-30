@@ -81,6 +81,10 @@ private fun PolicyCard(policy: PolicyModel, busy: Boolean, delay: NodeDelayResul
                 Text(if (policy.mode == "auto") "Auto" else policy.nodeTag, color = colorScheme.primary)
             }
             Text(stringResource(R.string.policy_group, group?.group?.name ?: policy.groupId), color = colorScheme.onSurfaceVariantSummary)
+            Text(
+                stringResource(if (policy.runtimeSynced) R.string.policy_runtime_active else R.string.policy_runtime_inactive),
+                color = if (policy.runtimeSynced) colorScheme.primary else colorScheme.onSurfaceVariantSummary
+            )
             Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 policy.groups.forEach { item ->
                     TextButton(
@@ -103,8 +107,14 @@ private fun PolicyCard(policy: PolicyModel, busy: Boolean, delay: NodeDelayResul
                 )
             }
             group?.nodes?.forEach { node ->
+                val result = delay?.groups?.flatMap { it.items }?.firstOrNull { it.tag == node.tag }
+                val health = when {
+                    result == null || result.urlTestTime == null -> R.string.policy_node_not_tested
+                    result.urlTestDelay != null -> R.string.policy_node_healthy
+                    else -> R.string.policy_node_unhealthy
+                }
                 TextButton(
-                    text = node.tag,
+                    text = "${node.tag} · ${stringResource(health)}",
                     enabled = !busy,
                     modifier = Modifier.fillMaxWidth(),
                     onClick = { onSelect(policy, policy.groupId, node.tag) }
