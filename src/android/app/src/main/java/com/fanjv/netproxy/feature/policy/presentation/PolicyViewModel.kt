@@ -79,6 +79,36 @@ internal class PolicyViewModel(private val repository: PolicyRepository) : ViewM
         }
     }
 
+    fun createCustom(name: String, packages: List<String>, domains: List<String>, ports: List<Int>) {
+        if (_state.value.busyId.isNotBlank()) return
+        _state.update { it.copy(busyId = CUSTOM_BUSY_ID, error = "") }
+        viewModelScope.launch {
+            runCatching { repository.create(name, packages, domains, ports) }
+                .onSuccess { refresh(force = true) }
+                .onFailure { error -> _state.update { it.copy(error = error.message.orEmpty(), busyId = "") } }
+        }
+    }
+
+    fun updateCustom(policy: PolicyModel, name: String, packages: List<String>, domains: List<String>, ports: List<Int>) {
+        if (_state.value.busyId.isNotBlank()) return
+        _state.update { it.copy(busyId = CUSTOM_BUSY_ID, error = "") }
+        viewModelScope.launch {
+            runCatching { repository.updateDefinition(policy, name, packages, domains, ports) }
+                .onSuccess { refresh(force = true) }
+                .onFailure { error -> _state.update { it.copy(error = error.message.orEmpty(), busyId = "") } }
+        }
+    }
+
+    fun deleteCustom(policy: PolicyModel) {
+        if (!policy.isCustom || _state.value.busyId.isNotBlank()) return
+        _state.update { it.copy(busyId = CUSTOM_BUSY_ID, error = "") }
+        viewModelScope.launch {
+            runCatching { repository.delete(policy.id) }
+                .onSuccess { refresh(force = true) }
+                .onFailure { error -> _state.update { it.copy(error = error.message.orEmpty(), busyId = "") } }
+        }
+    }
+
     fun saveChain(front: String, landing: String) {
         if (_state.value.busyId.isNotBlank()) return
         _state.update { it.copy(busyId = CHAIN_BUSY_ID, error = "") }
@@ -97,3 +127,4 @@ internal class PolicyViewModel(private val repository: PolicyRepository) : ViewM
 }
 
 internal const val CHAIN_BUSY_ID = "__chain__"
+internal const val CUSTOM_BUSY_ID = "__custom_policy__"

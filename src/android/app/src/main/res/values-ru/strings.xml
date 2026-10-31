@@ -89,8 +89,7 @@
     <string name="policy_node_not_tested">Не проверен</string>
     <string name="policy_node_healthy">Доступен</string>
     <string name="policy_node_unhealthy">Проверка не пройдена</string>
-    <string name="policy_group_picker">Группа узлов</string>
-    <string name="policy_manage_groups">Управление группами узлов</string>
+    <string name="policy_group_picker">Источник узлов</string>
     <string name="policy_current_selection">Текущий выбор</string>
     <string name="policy_choose_node">Выбрать узел</string>
     <string name="policy_auto_in_group">Авто · %1$s</string>
@@ -104,6 +103,16 @@
     <string name="policy_test_empty">Проверка не вернула узлы</string>
     <string name="policy_expand">Развернуть стратегию</string>
     <string name="policy_collapse">Свернуть стратегию</string>
+    <string name="policy_add_custom">Добавить стратегию</string>
+    <string name="policy_save_custom">Сохранить стратегию</string>
+    <string name="policy_edit_custom">Изменить стратегию</string>
+    <string name="policy_delete_custom">Удалить стратегию</string>
+    <string name="policy_custom_name">Название стратегии</string>
+    <string name="policy_custom_packages">Имена пакетов приложений (по одному в строке)</string>
+    <string name="policy_custom_domains">Суффиксы доменов (по одному в строке)</string>
+    <string name="policy_custom_ports">TCP-порты (через запятую)</string>
+    <string name="policy_custom_match_hint">Укажите приложение, домен или порт.</string>
+    <string name="policy_custom_delete_confirm">Удалить эту пользовательскую стратегию?</string>
     <string name="latency_testing">Проверка…</string>
     <string name="latency_failed">Ошибка проверки</string>
     <string name="latency_timeout">Тайм-аут</string>

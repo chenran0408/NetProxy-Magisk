@@ -87,7 +87,6 @@ import com.fanjv.netproxy.navigation.Route.NetworkMatching
 import com.fanjv.netproxy.navigation.Route.RoutingRules
 import com.fanjv.netproxy.navigation.Route.SubscriptionDetails
 import com.fanjv.netproxy.navigation.Route.SubscriptionEdit
-import com.fanjv.netproxy.navigation.Route.SubscriptionManage
 import com.fanjv.netproxy.navigation.Route.ThemeSettings
 import com.fanjv.netproxy.navigation.rememberMainPagerState
 import com.fanjv.netproxy.navigation.rememberNavigator
@@ -210,11 +209,6 @@ internal fun NetProxyApp(themeViewModel: ThemeViewModel) {
                             id = it.id,
                             onBack = { navigator.pop() }
                         )
-                    }
-                }
-                entry<SubscriptionManage> {
-                    ModulePage(R.string.subscriptions, R.string.subscriptions_read_failed, { navigator.pop() }) {
-                        SubscriptionsScreen()
                     }
                 }
                 entry<NodeEdit> {

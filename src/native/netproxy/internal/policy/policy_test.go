@@ -41,6 +41,41 @@ func TestLoadMissingReturnsDefaults(t *testing.T) {
 	}
 }
 
+func TestSaveLoadPreservesCustomPolicies(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "policies.json")
+	custom := Policy{
+		ID:             "custom-example",
+		Name:           "Work AI",
+		Type:           "custom",
+		PackageNames:   []string{"com.example.work"},
+		DomainSuffixes: []string{"example.com"},
+		GroupID:        "default",
+		Mode:           "auto",
+		RuntimeTag:     "Proxy",
+	}
+	items := append(Defaults(), custom)
+	if err := Save(context.Background(), path, items); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := Find(loaded, custom.ID)
+	if !ok || got.Name != custom.Name || !slices.Contains(got.PackageNames, "com.example.work") {
+		t.Fatalf("custom policy was not preserved: %#v", loaded)
+	}
+	if err := Validate(custom); err != nil {
+		t.Fatalf("valid custom policy rejected: %v", err)
+	}
+}
+
+func TestValidateRejectsEmptyCustomPolicy(t *testing.T) {
+	if err := Validate(Policy{ID: "custom-empty", Name: "Empty", Type: "custom", Mode: "proxy"}); err == nil {
+		t.Fatal("empty custom policy should require a match condition")
+	}
+}
+
 func TestDefaultsUseServiceSpecificRuleSets(t *testing.T) {
 	defaults := Defaults()
 	want := map[string]string{

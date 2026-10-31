@@ -63,8 +63,6 @@ import com.fanjv.netproxy.feature.catalog.model.NodeDelayResult
 import com.fanjv.netproxy.feature.catalog.presentation.nodes.list.components.NodeCard
 import com.fanjv.netproxy.feature.policy.model.ChainProxyModel
 import com.fanjv.netproxy.feature.policy.model.PolicyModel
-import com.fanjv.netproxy.navigation.LocalNavigator
-import com.fanjv.netproxy.navigation.Route
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
@@ -85,6 +83,7 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.ExpandLess
 import top.yukonga.miuix.kmp.icon.extended.ExpandMore
 import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
+import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 
@@ -95,7 +94,6 @@ internal fun PolicyScreen(
     viewModel: PolicyViewModel = netProxyViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val navigator = LocalNavigator.current
     val context = androidx.compose.ui.platform.LocalContext.current
     val displayPreferences = remember(context) {
         context.getSharedPreferences("node_display", Context.MODE_PRIVATE)
@@ -103,6 +101,8 @@ internal fun PolicyScreen(
     var showDisplaySettings by remember { mutableStateOf(false) }
     var showMoreMenu by remember { mutableStateOf(false) }
     var showChainSheet by remember { mutableStateOf(false) }
+    var policyEditorId by remember { mutableStateOf<String?>(null) }
+    var deletePolicyId by remember { mutableStateOf<String?>(null) }
     var pickerPolicyId by remember { mutableStateOf<String?>(null) }
     var pickerGroupId by remember { mutableStateOf("") }
     var expandedPolicies by remember {
@@ -158,6 +158,10 @@ internal fun PolicyScreen(
                         expanded = showMoreMenu,
                         onExpandedChange = { showMoreMenu = it },
                         actions = listOf(
+                            TopBarMenuAction(
+                                text = stringResource(R.string.policy_add_custom),
+                                onClick = { policyEditorId = "" }
+                            ),
                             TopBarMenuAction(
                                 text = stringResource(R.string.node_display_settings),
                                 onClick = { showDisplaySettings = true }
@@ -215,6 +219,8 @@ internal fun PolicyScreen(
                                     pickerGroupId = policy.groupId
                                 },
                                 onOpenChain = { showChainSheet = true },
+                                onEditCustom = { policyEditorId = policy.id },
+                                onDeleteCustom = { deletePolicyId = policy.id },
                                 onSelect = viewModel::select,
                                 onTest = viewModel::test
                             )
@@ -297,7 +303,6 @@ internal fun PolicyScreen(
                 sortMode = sortMode,
                 busy = state.busyId == pickerPolicy.id,
                 onGroupSelected = { pickerGroupId = it },
-                onManageGroups = { navigator.push(Route.SubscriptionManage) },
                 onSelect = { groupId, nodeTag, mode, region ->
                     viewModel.select(pickerPolicy, groupId, nodeTag, mode, region)
                     pickerPolicyId = null
@@ -319,6 +324,48 @@ internal fun PolicyScreen(
             onDismiss = { showChainSheet = false }
         )
     }
+
+    val editorPolicy = state.policies.firstOrNull { it.id == policyEditorId }
+    OverlayBottomSheet(
+        show = policyEditorId != null,
+        title = stringResource(if (editorPolicy == null) R.string.policy_add_custom else R.string.policy_edit_custom),
+        onDismissRequest = { policyEditorId = null }
+    ) {
+        CustomPolicyEditor(
+            policy = editorPolicy,
+            busy = state.busyId == CUSTOM_BUSY_ID,
+            onDismiss = { policyEditorId = null },
+            onSave = { name, packages, domains, ports ->
+                if (editorPolicy == null) viewModel.createCustom(name, packages, domains, ports)
+                else viewModel.updateCustom(editorPolicy, name, packages, domains, ports)
+                policyEditorId = null
+            }
+        )
+    }
+
+    val deletePolicy = state.policies.firstOrNull { it.id == deletePolicyId }
+    OverlayDialog(
+        show = deletePolicy != null,
+        title = stringResource(R.string.policy_delete_custom),
+        onDismissRequest = { deletePolicyId = null }
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(stringResource(R.string.policy_custom_delete_confirm))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                TextButton(stringResource(android.R.string.cancel), modifier = Modifier.weight(1f), onClick = { deletePolicyId = null })
+                TextButton(
+                    stringResource(R.string.policy_delete_custom),
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                    enabled = state.busyId.isBlank(),
+                    onClick = {
+                        deletePolicy?.let(viewModel::deleteCustom)
+                        deletePolicyId = null
+                    }
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -333,6 +380,8 @@ private fun PolicyCard(
     onToggleExpanded: () -> Unit,
     onChooseNodes: () -> Unit,
     onOpenChain: () -> Unit,
+    onEditCustom: () -> Unit,
+    onDeleteCustom: () -> Unit,
     onSelect: (PolicyModel, String, String, String, String) -> Unit,
     onTest: (PolicyModel) -> Unit
 ) {
@@ -385,6 +434,22 @@ private fun PolicyCard(
                 RuntimeBadge(policy.runtimeSynced)
             }
             if (expanded) {
+                if (policy.isCustom) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(
+                            text = stringResource(R.string.policy_edit_custom),
+                            modifier = Modifier.weight(1f),
+                            enabled = !busy,
+                            onClick = onEditCustom
+                        )
+                        TextButton(
+                            text = stringResource(R.string.policy_delete_custom),
+                            modifier = Modifier.weight(1f),
+                            enabled = !busy,
+                            onClick = onDeleteCustom
+                        )
+                    }
+                }
                 val modeItems = buildList {
                     add("direct" to stringResource(R.string.policy_direct))
                     add("proxy" to stringResource(R.string.policy_proxy))
@@ -635,6 +700,72 @@ private fun ChainSlotCard(title: String, value: String, enabled: Boolean, onClic
 }
 
 @Composable
+private fun CustomPolicyEditor(
+    policy: PolicyModel?,
+    busy: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (String, List<String>, List<String>, List<Int>) -> Unit,
+) {
+    var name by remember(policy?.id) { mutableStateOf(policy?.name.orEmpty()) }
+    var packages by remember(policy?.id) { mutableStateOf(policy?.packageNames.orEmpty().joinToString("\n")) }
+    var domains by remember(policy?.id) { mutableStateOf(policy?.domainSuffixes.orEmpty().joinToString("\n")) }
+    var ports by remember(policy?.id) { mutableStateOf(policy?.ports.orEmpty().joinToString(", ")) }
+    val packageItems = packages.lines().map(String::trim).filter(String::isNotBlank).distinct()
+    val domainItems = domains.lines().map(String::trim).filter(String::isNotBlank).distinct()
+    val portItems = ports.split(',', '\n', ' ', '，').mapNotNull { it.trim().toIntOrNull() }.distinct()
+    val hasMatch = packageItems.isNotEmpty() || domainItems.isNotEmpty() || portItems.isNotEmpty()
+
+    Column(
+        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        TextField(
+            value = name,
+            onValueChange = { name = it },
+            label = stringResource(R.string.policy_custom_name),
+            maxLines = 1,
+            modifier = Modifier.fillMaxWidth()
+        )
+        TextField(
+            value = packages,
+            onValueChange = { packages = it },
+            label = stringResource(R.string.policy_custom_packages),
+            maxLines = 3,
+            modifier = Modifier.fillMaxWidth()
+        )
+        TextField(
+            value = domains,
+            onValueChange = { domains = it },
+            label = stringResource(R.string.policy_custom_domains),
+            maxLines = 3,
+            modifier = Modifier.fillMaxWidth()
+        )
+        TextField(
+            value = ports,
+            onValueChange = { ports = it },
+            label = stringResource(R.string.policy_custom_ports),
+            maxLines = 1,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Text(
+            text = stringResource(R.string.policy_custom_match_hint),
+            fontSize = 12.sp,
+            color = colorScheme.onSurfaceVariantSummary
+        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            TextButton(stringResource(android.R.string.cancel), modifier = Modifier.weight(1f), onClick = onDismiss)
+            TextButton(
+                stringResource(if (busy) R.string.policy_testing else R.string.policy_save_custom),
+                modifier = Modifier.weight(1f),
+                enabled = !busy && name.isNotBlank() && hasMatch,
+                colors = ButtonDefaults.textButtonColorsPrimary(),
+                onClick = { onSave(name.trim(), packageItems, domainItems, portItems) }
+            )
+        }
+    }
+}
+
+@Composable
 private fun PolicyNodePicker(
     policy: PolicyModel,
     groupId: String,
@@ -645,7 +776,6 @@ private fun PolicyNodePicker(
     sortMode: Int,
     busy: Boolean,
     onGroupSelected: (String) -> Unit,
-    onManageGroups: () -> Unit,
     onSelect: (String, String, String, String) -> Unit,
     onTest: () -> Unit
 ) {
@@ -710,7 +840,7 @@ private fun PolicyNodePicker(
                     cornerRadius = 14.dp,
                     insideMargin = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                     colors = CardDefaults.defaultColors(color = colorScheme.surfaceContainer),
-                    onClick = { showGroupMenu = true }
+                    onClick = if (!busy) ({ showGroupMenu = true }) else null
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
@@ -735,13 +865,6 @@ private fun PolicyNodePicker(
                 onClick = onTest
             )
         }
-        TextButton(
-            text = stringResource(R.string.policy_manage_groups),
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.textButtonColorsPrimary(),
-            enabled = !busy,
-            onClick = onManageGroups
-        )
         if (busy) {
             PolicyTestingStatus()
         } else if (delay != null) {
@@ -895,7 +1018,7 @@ private fun SelectionSummaryCard(
         colors = CardDefaults.defaultColors(
             color = if (selected) colorScheme.primary.copy(alpha = 0.12f) else colorScheme.surfaceContainer
         ),
-        onClick = onClick
+        onClick = if (enabled) onClick else null
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(title, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = colorScheme.onSurface)

@@ -11,6 +11,8 @@ internal data class PolicyModel(
     val icon: String = "",
     val type: String = "domain",
     @SerialName("rule_sets") val ruleSets: List<String> = emptyList(),
+    @SerialName("package_names") val packageNames: List<String> = emptyList(),
+    @SerialName("domain_suffixes") val domainSuffixes: List<String> = emptyList(),
     val ports: List<Int> = emptyList(),
     @SerialName("group_id") val groupId: String = "default",
     @SerialName("node_tag") val nodeTag: String = "",
@@ -21,8 +23,9 @@ internal data class PolicyModel(
     val groups: List<CatalogNodeGroup> = emptyList(),
     val persisted: Boolean = false,
     @SerialName("runtime_synced") val runtimeSynced: Boolean = false,
-)
-
+) {
+    val isCustom: Boolean get() = id.startsWith("custom-")
+}
 @Serializable
 internal data class PolicyResponse(val schema: Int = 1, val policies: List<PolicyModel> = emptyList())
 

@@ -8,6 +8,8 @@ import com.fanjv.netproxy.feature.catalog.model.NodeDelayResult
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.add
 import kotlinx.coroutines.flow.map
 
 internal class PolicyRepository(private val client: ModuleApiClient) {
@@ -24,6 +26,32 @@ internal class PolicyRepository(private val client: ModuleApiClient) {
             put("mode", policy.mode)
             put("region", policy.region)
         })
+    }
+
+    suspend fun create(name: String, packages: List<String>, domains: List<String>, ports: List<Int>) {
+        client.post("/policies", buildJsonObject {
+            put("name", name)
+            putJsonArray("package_names") { packages.forEach(::add) }
+            putJsonArray("domain_suffixes") { domains.forEach(::add) }
+            putJsonArray("ports") { ports.forEach(::add) }
+        })
+    }
+
+    suspend fun updateDefinition(policy: PolicyModel, name: String, packages: List<String>, domains: List<String>, ports: List<Int>) {
+        client.put("/policies/${policy.id}", buildJsonObject {
+            put("name", name)
+            putJsonArray("package_names") { packages.forEach(::add) }
+            putJsonArray("domain_suffixes") { domains.forEach(::add) }
+            putJsonArray("ports") { ports.forEach(::add) }
+            put("group_id", policy.groupId)
+            put("node_tag", policy.nodeTag)
+            put("mode", policy.mode)
+            put("region", policy.region)
+        })
+    }
+
+    suspend fun delete(id: String) {
+        client.delete("/policies/$id")
     }
 
     suspend fun test(policy: PolicyModel): NodeDelayResult = client.json.decodeFromJsonElement<NodeDelayResult>(

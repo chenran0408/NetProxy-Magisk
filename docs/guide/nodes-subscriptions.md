@@ -70,7 +70,7 @@ su -c '/data/adb/modules/netproxy/netproxyctl node use default/my-socks'
 
 界面中选中 `Auto` 时，只标记 Auto，不会同时把其内部当前节点标成手动选择。手动节点在订阅更新后消失时会回到同组 Auto，不会静默切到直连。
 
-需要在全部订阅节点之上再建立地区或业务选择器时，请参阅[策略分组配置教程](/config/policy-groups)。自定义策略组属于 sing-box 出站配置，不会改变节点页中的 Catalog 分组。
+需要在全部订阅节点之上再建立地区或业务选择器时，请使用 App 的“策略”页面；策略是路由规则定义，不是节点分组。`/config/policy-groups` 仅介绍高级 sing-box 出站配置，不能替代节点页面的订阅和节点管理。
 
 ## 测速
 

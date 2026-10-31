@@ -62,6 +62,15 @@ func Defaults() []Policy {
 	}
 }
 
+func IsBuiltin(id string) bool {
+	for _, item := range Defaults() {
+		if item.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
 func Load(ctx context.Context, path string) ([]Policy, error) {
 	select {
 	case <-ctx.Done():
@@ -109,8 +118,11 @@ func mergeDefaults(stored []Policy) []Policy {
 	for _, item := range stored {
 		byID[item.ID] = item
 	}
-	result := make([]Policy, 0, len(Defaults()))
-	for _, item := range Defaults() {
+	defaults := Defaults()
+	result := make([]Policy, 0, len(defaults)+len(stored))
+	known := make(map[string]struct{}, len(defaults))
+	for _, item := range defaults {
+		known[item.ID] = struct{}{}
 		if saved, ok := byID[item.ID]; ok {
 			// Older state files predate app/domain matching. Keep the user's
 			// selection while upgrading the built-in AI match set in place.
@@ -124,6 +136,11 @@ func mergeDefaults(stored []Policy) []Policy {
 			}
 			result = append(result, saved)
 		} else {
+			result = append(result, item)
+		}
+	}
+	for _, item := range stored {
+		if _, ok := known[item.ID]; !ok {
 			result = append(result, item)
 		}
 	}
@@ -145,6 +162,9 @@ func Validate(value Policy) error {
 	}
 	if value.Mode != "auto" && value.Mode != "manual" && value.Mode != "direct" && value.Mode != "proxy" && value.Mode != "chain" {
 		return errors.New("策略模式必须为 auto、manual、direct、proxy 或 chain")
+	}
+	if !IsBuiltin(value.ID) && len(value.RuleSets) == 0 && len(value.PackageNames) == 0 && len(value.DomainSuffixes) == 0 && len(value.Ports) == 0 {
+		return errors.New("自定义策略至少需要一个应用、域名、端口或规则集匹配条件")
 	}
 	if (value.Mode == "auto" || value.Mode == "manual") && value.GroupID == "" {
 		return errors.New("策略分组不能为空")

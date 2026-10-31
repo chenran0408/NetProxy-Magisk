@@ -33,10 +33,6 @@ sealed interface Route : NavKey, Parcelable {
 
     @Parcelize
     @Serializable
-    data object SubscriptionManage : Route
-
-    @Parcelize
-    @Serializable
     data class NodeEdit(val nodeRef: String) : Route
 
     @Parcelize
