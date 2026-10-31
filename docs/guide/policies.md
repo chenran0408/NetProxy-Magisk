@@ -14,4 +14,4 @@ NetProxy Android App 的“策略”入口提供常用域名策略的选择界�
 
 策略会生成独立的 runtime route overlay，并随服务启动、检查和重载加载。
 
-Google FCM 使用独立的 `fcm` 本地规则集，覆盖 Google 推送域名，并对 TCP 5228、5229、5230 提供端口回退匹配。它不会扩大到整个 `google.com` 或 `googleapis.com`。FCM 默认跟随 Proxy，但可以在策略页单独切换到直连、某个分组节点、Auto 或链式代理；端口回退会跟随同一个 FCM 出口选择。
+Google FCM 使用独立的 `fcm` 本地规则集，覆盖 Google 推送域名，并对 TCP 5228、5229、5230 提供端口回退匹配。它不会扩大到整个 `google.com` 或 `googleapis.com`。FCM 默认跟随 Proxy，但可以在策略页单独切换到直连、某个分组节点、Auto 或链式代理；端口回退会跟随同一个 FCM 出口选择。没有可用链式落地节点时，策略页会隐藏或禁用链式代理，不会静默改走普通 Proxy。

@@ -16,6 +16,7 @@ internal data class PolicyModel(
     @SerialName("node_tag") val nodeTag: String = "",
     val mode: String = "auto",
     @SerialName("runtime_tag") val runtimeTag: String = "Proxy",
+    @SerialName("chain_available") val chainAvailable: Boolean = false,
     val groups: List<CatalogNodeGroup> = emptyList(),
     val persisted: Boolean = false,
     @SerialName("runtime_synced") val runtimeSynced: Boolean = false,

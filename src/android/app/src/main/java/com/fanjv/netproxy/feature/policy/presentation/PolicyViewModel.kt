@@ -18,12 +18,15 @@ internal class PolicyViewModel(private val repository: PolicyRepository) : ViewM
     private val _state = MutableStateFlow(PolicyUiState())
     val state: StateFlow<PolicyUiState> = _state.asStateFlow()
     private var eventsJob: Job? = null
+    private var refreshJob: Job? = null
     private var loaded = false
 
     fun setVisible(visible: Boolean) {
         if (!visible) {
             eventsJob?.cancel()
             eventsJob = null
+            refreshJob?.cancel()
+            refreshJob = null
             return
         }
         refresh(silent = loaded)
@@ -35,9 +38,11 @@ internal class PolicyViewModel(private val repository: PolicyRepository) : ViewM
         }
     }
 
-    fun refresh(silent: Boolean = false) {
-        if (!silent) _state.update { it.copy(loading = true, error = "", busyId = "") }
-        viewModelScope.launch {
+    fun refresh(silent: Boolean = false, force: Boolean = false) {
+        if (!force && (refreshJob?.isActive == true || _state.value.busyId.isNotBlank())) return
+        if (force) refreshJob?.cancel()
+        if (!silent) _state.update { it.copy(loading = true, error = "") }
+        refreshJob = viewModelScope.launch {
             runCatching { repository.list() }.onSuccess { list ->
                 loaded = true
                 _state.value = PolicyUiState(policies = list)
@@ -47,18 +52,26 @@ internal class PolicyViewModel(private val repository: PolicyRepository) : ViewM
     }
 
     fun select(policy: PolicyModel, groupId: String, nodeTag: String, mode: String = if (nodeTag.isBlank()) "auto" else "manual") {
+        if (_state.value.busyId.isNotBlank()) return
         _state.update { it.copy(busyId = policy.id) }
         viewModelScope.launch {
             runCatching { repository.save(policy.copy(groupId = groupId, nodeTag = nodeTag, mode = mode)) }
-                .onSuccess { refresh() }.onFailure { error -> _state.update { it.copy(error = error.message.orEmpty(), busyId = "") } }
+                .onSuccess { refresh(force = true) }.onFailure { error -> _state.update { it.copy(error = error.message.orEmpty(), busyId = "") } }
         }
     }
 
     fun test(policy: PolicyModel) {
+        if (_state.value.busyId.isNotBlank()) return
         _state.update { it.copy(busyId = policy.id) }
         viewModelScope.launch {
             runCatching { repository.test(policy) }.onSuccess { result -> _state.update { it.copy(busyId = "", delays = it.delays + (policy.id to result)) } }
                 .onFailure { error -> _state.update { it.copy(error = error.message.orEmpty(), busyId = "") } }
         }
+    }
+
+    override fun onCleared() {
+        eventsJob?.cancel()
+        refreshJob?.cancel()
+        super.onCleared()
     }
 }

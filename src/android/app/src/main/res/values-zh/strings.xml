@@ -65,6 +65,7 @@
     <string name="policy_direct">直连</string>
     <string name="policy_proxy">Proxy</string>
     <string name="policy_chain">链式代理</string>
+    <string name="policy_chain_unavailable">当前没有可用的链式落地节点，请选择其他出口</string>
     <string name="policy_group">策略组：%1$s</string>
     <string name="policy_test">测速</string>
     <string name="policy_runtime_active">服务运行中</string>

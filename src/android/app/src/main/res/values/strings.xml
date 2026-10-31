@@ -57,6 +57,7 @@
     <string name="policy_direct">Direct</string>
     <string name="policy_proxy">Proxy</string>
     <string name="policy_chain">Chain proxy</string>
+    <string name="policy_chain_unavailable">Chain proxy is currently unavailable; choose another outbound.</string>
     <string name="policy_group">Group: %1$s</string>
     <string name="policy_test">Test nodes</string>
     <string name="policy_runtime_active">Service running</string>

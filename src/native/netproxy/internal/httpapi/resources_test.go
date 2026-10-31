@@ -202,6 +202,10 @@ func TestResourcesPolicyListSaveAndValidation(t *testing.T) {
 	if err != nil || !strings.Contains(string(stored), `"mode":"direct"`) {
 		t.Fatalf("独立直连策略未持久化: %s, %v", stored, err)
 	}
+	response, result = resourceRequest(t, server, "PUT", "/api/v1/policies/ai", `{"group_id":"default","node_tag":"","mode":"chain"}`)
+	if response.Code != http.StatusBadRequest || result.Code != "usage.invalid" || !strings.Contains(response.Body.String(), "链式代理当前不可用") {
+		t.Fatalf("不可用链式出口未被拒绝: %s", response.Body.String())
+	}
 	response, result = resourceRequest(t, server, "PUT", "/api/v1/policies/missing", `{"group_id":"default","node_tag":"","mode":"auto"}`)
 	if response.Code != http.StatusNotFound || result.Code != "policy.not_found" {
 		t.Fatalf("未知策略错误契约不符: %s", response.Body.String())

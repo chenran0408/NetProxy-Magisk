@@ -83,9 +83,10 @@ func (s *Server) registerResources() {
 
 type policyView struct {
 	policy.Policy
-	Groups        []catalog.GroupSnapshot `json:"groups"`
-	Persisted     bool                    `json:"persisted"`
-	RuntimeSynced bool                    `json:"runtime_synced"`
+	Groups         []catalog.GroupSnapshot `json:"groups"`
+	Persisted      bool                    `json:"persisted"`
+	RuntimeSynced  bool                    `json:"runtime_synced"`
+	ChainAvailable bool                    `json:"chain_available"`
 }
 
 func (s *Server) policyPath() string {
@@ -106,8 +107,9 @@ func (s *Server) readPolicies(ctx context.Context, r *http.Request) (contract.Re
 	}
 	result := make([]policyView, 0, len(items))
 	runtimeSynced := service.ProcessRunning(s.options.SingBoxPath)
+	chainAvailable := policyChainAvailable(s.options.RuntimeDir)
 	for _, item := range items {
-		result = append(result, policyView{Policy: item, Groups: groups, Persisted: true, RuntimeSynced: runtimeSynced})
+		result = append(result, policyView{Policy: item, Groups: groups, Persisted: true, RuntimeSynced: runtimeSynced, ChainAvailable: chainAvailable})
 	}
 	return contract.Success("policy.list", "策略列表", map[string]any{"policies": result, "schema": 1}), nil
 }
@@ -141,8 +143,13 @@ func (s *Server) savePolicy(ctx context.Context, r *http.Request) (contract.Resu
 	} else {
 		current.Mode = "manual"
 	}
-	if err := resourceGroupID(current.GroupID, false); err != nil {
-		return contract.Result{}, err
+	if current.Mode == "auto" || current.Mode == "manual" {
+		if err := resourceGroupID(current.GroupID, false); err != nil {
+			return contract.Result{}, err
+		}
+	}
+	if current.Mode == "chain" && !policyChainAvailable(s.options.RuntimeDir) {
+		return contract.Result{}, invalid("链式代理当前不可用，请先准备至少一个支持链式落地的节点")
 	}
 	if err := policy.Validate(current); err != nil {
 		return contract.Result{}, invalid(err.Error())
@@ -194,6 +201,14 @@ func validatePolicyTarget(ctx context.Context, root string, item policy.Policy) 
 		return errors.New("策略节点不存在或已失效")
 	}
 	return errors.New("策略分组不存在或已失效")
+}
+
+func policyChainAvailable(runtimeDir string) bool {
+	if strings.TrimSpace(runtimeDir) == "" {
+		return false
+	}
+	_, err := os.Stat(filepath.Join(runtimeDir, "chain-landing.json"))
+	return err == nil
 }
 
 func (s *Server) testPolicy(ctx context.Context, r *http.Request) (contract.Result, error) {

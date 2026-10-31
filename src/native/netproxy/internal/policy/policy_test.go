@@ -133,7 +133,6 @@ func TestBuildRuntimeProjectsIndependentPolicyTargets(t *testing.T) {
 	items := []Policy{
 		{ID: "direct", RuleSets: []string{"fcm"}, Mode: "direct"},
 		{ID: "proxy", RuleSets: []string{"geosite/google"}, Mode: "proxy"},
-		{ID: "chain", RuleSets: []string{"geosite/youtube"}, Mode: "chain"},
 	}
 	written, err := BuildRuntime(context.Background(), path, root, items)
 	if err != nil || !written {
@@ -147,7 +146,12 @@ func TestBuildRuntimeProjectsIndependentPolicyTargets(t *testing.T) {
 	if !strings.Contains(text, `"outbound":"direct"`) || !strings.Contains(text, `"outbound":"Proxy"`) {
 		t.Fatalf("independent targets missing: %s", text)
 	}
-	if strings.Contains(text, `"outbound":"链式代理"`) {
-		t.Fatal("chain target must fall back when runtime chain is unavailable")
+}
+
+func TestBuildRuntimeRejectsUnavailableChainTarget(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(t.TempDir(), "runtime", "policies.json")
+	if _, err := BuildRuntime(context.Background(), path, root, []Policy{{ID: "chain", RuleSets: []string{"fcm"}, Mode: "chain"}}); err == nil || !strings.Contains(err.Error(), "链式落地") {
+		t.Fatalf("unavailable chain target was not rejected: %v", err)
 	}
 }

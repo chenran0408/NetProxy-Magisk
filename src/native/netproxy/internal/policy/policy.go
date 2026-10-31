@@ -159,7 +159,7 @@ func BuildRuntime(ctx context.Context, path, catalogRoot string, policies []Poli
 			if chainAvailable {
 				target = catalog.ChainOutboundTag
 			} else {
-				target = "Proxy"
+				return false, errors.New("策略选择了链式代理，但当前没有可用的链式落地节点")
 			}
 		case "auto", "manual":
 			// Group-backed modes are resolved below.

@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SmartToy
@@ -120,7 +121,7 @@ internal fun PolicyScreen(
                 title = stringResource(R.string.policies),
                 scrollBehavior = scrollBehavior,
                 actions = {
-                    IconButton(onClick = viewModel::refresh) {
+                    IconButton(enabled = !state.loading && state.busyId.isBlank(), onClick = viewModel::refresh) {
                         Icon(Icons.Rounded.Refresh, stringResource(R.string.common_update))
                     }
                     TopBarMoreMenu(
@@ -243,6 +244,7 @@ private fun PolicyCard(
     onTest: (PolicyModel) -> Unit
 ) {
     val group = policy.groups.firstOrNull { it.group.id == policy.groupId }
+    val usesNodes = policy.mode == "auto" || policy.mode == "manual"
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -274,74 +276,79 @@ private fun PolicyCard(
                     "proxy" to stringResource(R.string.policy_proxy),
                     "chain" to stringResource(R.string.policy_chain)
                 ).forEach { (mode, label) ->
+                    if (mode == "chain" && !policy.chainAvailable && policy.mode != "chain") return@forEach
                     TextButton(
                         text = label,
-                        enabled = !busy,
+                        enabled = !busy && (mode != "chain" || policy.chainAvailable),
                         colors = if (policy.mode == mode) ButtonDefaults.textButtonColorsPrimary() else ButtonDefaults.textButtonColors(),
                         onClick = { onSelect(policy, policy.groupId, "", mode) }
                     )
                 }
             }
-            Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                policy.groups.forEach { item ->
+            if (usesNodes) {
+                Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    policy.groups.forEach { item ->
+                        TextButton(
+                            text = item.group.name,
+                            enabled = !busy,
+                            colors = if (policy.mode == "manual" && item.group.id == policy.groupId) {
+                                ButtonDefaults.textButtonColorsPrimary()
+                            } else {
+                                ButtonDefaults.textButtonColors()
+                            },
+                            onClick = { onSelect(policy, item.group.id, "", "auto") }
+                        )
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(
-                        text = item.group.name,
+                        text = stringResource(R.string.policy_auto),
                         enabled = !busy,
-                        colors = if (policy.mode != "auto" && item.group.id == policy.groupId) {
-                            ButtonDefaults.textButtonColorsPrimary()
-                        } else {
-                            ButtonDefaults.textButtonColors()
-                        },
-                        onClick = { onSelect(policy, item.group.id, "", "auto") }
+                        colors = if (policy.mode == "auto") ButtonDefaults.textButtonColorsPrimary() else ButtonDefaults.textButtonColors(),
+                        onClick = { onSelect(policy, policy.groupId, "", "auto") }
+                    )
+                    TextButton(
+                        text = stringResource(R.string.policy_test),
+                        enabled = !busy,
+                        onClick = { onTest(policy) }
                     )
                 }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(
-                    text = stringResource(R.string.policy_auto),
-                    enabled = !busy,
-                    colors = if (policy.mode == "auto") ButtonDefaults.textButtonColorsPrimary() else ButtonDefaults.textButtonColors(),
-                    onClick = { onSelect(policy, policy.groupId, "", "auto") }
-                )
-                TextButton(
-                    text = stringResource(R.string.policy_test),
-                    enabled = !busy && (policy.mode == "auto" || policy.mode == "manual"),
-                    onClick = { onTest(policy) }
-                )
-            }
-            // Keep the policy node picker in the same compact grid language as Nodes.
-            policyEntries(group, delay, sortMode).chunked(columns).forEach { rowEntries ->
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    rowEntries.forEach { node ->
-                        Box(modifier = Modifier.weight(1f)) {
-                            if (node == null) {
-                                NodeCard(
-                                    title = stringResource(R.string.node_auto_fastest),
-                                    summary = stringResource(R.string.node_auto_test),
-                                    protocol = "AUTO",
-                                    selected = policy.mode == "auto",
-                                    enabled = !busy,
-                                    itemSize = itemSize,
-                                    onClick = { onSelect(policy, policy.groupId, "", "auto") }
-                                )
-                            } else {
-                                NodeCard(
-                                    title = node.tag,
-                                    summary = nodeSummary(node, delay),
-                                    protocol = node.protocol.uppercase().ifBlank { "NODE" },
-                                    latency = nodeLatency(node, delay),
-                                    selected = policy.mode != "auto" && policy.nodeTag == node.tag,
-                                    enabled = !busy,
-                                    itemSize = itemSize,
-                                    onClick = { onSelect(policy, policy.groupId, node.tag, "manual") }
-                                )
+                // Keep the policy node picker in the same compact grid language as Nodes.
+                policyEntries(group, delay, sortMode).chunked(columns).forEach { rowEntries ->
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        rowEntries.forEach { node ->
+                            Box(modifier = Modifier.weight(1f)) {
+                                if (node == null) {
+                                    NodeCard(
+                                        title = stringResource(R.string.node_auto_fastest),
+                                        summary = stringResource(R.string.node_auto_test),
+                                        protocol = "AUTO",
+                                        selected = policy.mode == "auto",
+                                        enabled = !busy,
+                                        itemSize = itemSize,
+                                        onClick = { onSelect(policy, policy.groupId, "", "auto") }
+                                    )
+                                } else {
+                                    NodeCard(
+                                        title = node.tag,
+                                        summary = nodeSummary(node, delay),
+                                        protocol = node.protocol.uppercase().ifBlank { "NODE" },
+                                        latency = nodeLatency(node, delay),
+                                        selected = policy.mode == "manual" && policy.nodeTag == node.tag,
+                                        enabled = !busy,
+                                        itemSize = itemSize,
+                                        onClick = { onSelect(policy, policy.groupId, node.tag, "manual") }
+                                    )
+                                }
                             }
                         }
-                    }
-                    if (rowEntries.size < columns) {
-                        repeat(columns - rowEntries.size) { Spacer(modifier = Modifier.weight(1f)) }
+                        if (rowEntries.size < columns) {
+                            repeat(columns - rowEntries.size) { Spacer(modifier = Modifier.weight(1f)) }
+                        }
                     }
                 }
+            } else if (policy.mode == "chain" && !policy.chainAvailable) {
+                Text(stringResource(R.string.policy_chain_unavailable), color = colorScheme.error, fontSize = 12.sp)
             }
         }
     }
@@ -380,6 +387,7 @@ private fun PolicyIcon(policy: PolicyModel) {
         "netflix" -> Icons.Rounded.Movie
         "github" -> Icons.Rounded.Code
         "google" -> Icons.Rounded.Search
+        "fcm" -> Icons.Rounded.Notifications
         else -> Icons.Rounded.Tune
     }
     Box(
