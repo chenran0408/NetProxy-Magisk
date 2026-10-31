@@ -146,6 +146,7 @@ func TestResourcesReadWhileCoreStopped(t *testing.T) {
 		{"/api/v1/nodes/snapshot?group_id=default", "node.snapshot"},
 		{"/api/v1/selection", "node.current"},
 		{"/api/v1/mode", "mode.current"},
+		{"/api/v1/chain", "chain.current"},
 		{"/api/v1/subscriptions", "subscription.list"},
 		{"/api/v1/configs", "config.list"},
 		{"/api/v1/config?target=inbound", "config.read"},
@@ -196,6 +197,11 @@ func TestResourcesPolicyListSaveAndValidation(t *testing.T) {
 	stored, err = os.ReadFile(filepath.Join(filepath.Dir(server.options.StateFile), "policies.json"))
 	if err != nil || !strings.Contains(string(stored), `"mode":"auto"`) || !strings.Contains(string(stored), `"node_tag":""`) {
 		t.Fatalf("Auto 选择未持久化: %s, %v", stored, err)
+	}
+	resourceAssertSuccess(t, server, "PUT", "/api/v1/policies/ai", `{"group_id":"default","node_tag":"","mode":"auto","region":"other"}`, "policy.saved", nil)
+	stored, err = os.ReadFile(filepath.Join(filepath.Dir(server.options.StateFile), "policies.json"))
+	if err != nil || !strings.Contains(string(stored), `"mode":"auto"`) || !strings.Contains(string(stored), `"region":"other"`) || !strings.Contains(string(stored), `"node_tag":""`) {
+		t.Fatalf("地区自动选择未持久化为地区而非节点: %s, %v", stored, err)
 	}
 	resourceAssertSuccess(t, server, "PUT", "/api/v1/policies/ai", `{"group_id":"default","node_tag":"","mode":"direct"}`, "policy.saved", nil)
 	stored, err = os.ReadFile(filepath.Join(filepath.Dir(server.options.StateFile), "policies.json"))

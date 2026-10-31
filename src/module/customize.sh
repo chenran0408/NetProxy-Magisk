@@ -341,6 +341,19 @@ copy_user_data_locked() {
         rm -rf "$snapshot/current/config/singbox/rules/remote" \
           && cp -a "$MODPATH/config/singbox/rules/remote" "$snapshot/current/config/singbox/rules/remote" \
           || { failed=true; break; }
+        # FCM is a bundled local rule set added after older installs. Preserve
+        # user configuration while filling this required built-in resource.
+        if [ ! -e "$snapshot/current/config/singbox/rules/local/fcm.json" ]; then
+          cp -a "$MODPATH/config/singbox/rules/local/fcm.json" \
+            "$snapshot/current/config/singbox/rules/local/fcm.json" \
+            || { failed=true; break; }
+        fi
+        if ! grep -q '"fcm"' "$snapshot/current/config/singbox/config.json"; then
+          sed -i 's/"tag": \["block", "direct", "proxy"\]/"tag": ["block", "direct", "proxy", "fcm"]/' \
+            "$snapshot/current/config/singbox/config.json" \
+            || { failed=true; break; }
+          grep -q '"fcm"' "$snapshot/current/config/singbox/config.json" || { failed=true; break; }
+        fi
         if is_no_telemetry_build; then
           rm -rf "$snapshot/current/config/telemetry" || { failed=true; break; }
         fi

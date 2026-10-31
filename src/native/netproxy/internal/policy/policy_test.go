@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -58,6 +59,26 @@ func TestDefaultsUseServiceSpecificRuleSets(t *testing.T) {
 	if !ok || fcm.Mode != "proxy" || len(fcm.RuleSets) != 1 || fcm.RuleSets[0] != "fcm" || !strings.Contains(fmt.Sprint(fcm.Ports), "5228") {
 		t.Fatalf("FCM default = %#v", fcm)
 	}
+	ai, ok := Find(defaults, "ai")
+	if !ok || !slices.Contains(ai.PackageNames, "com.openai.chatgpt") || !slices.Contains(ai.DomainSuffixes, "openai.com") {
+		t.Fatalf("AI match set = %#v", ai)
+	}
+}
+
+func TestLoadUpgradesOlderAIPolicyMatchSet(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "policies.json")
+	old := `{"schema":1,"policies":[{"id":"ai","name":"AI","icon":"AI","type":"domain","rule_sets":["geosite/category-ai-!cn"],"group_id":"default","node_tag":"","mode":"manual","runtime_tag":"Proxy"}]}`
+	if err := os.WriteFile(path, []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	items, err := Load(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ai, ok := Find(items, "ai")
+	if !ok || !slices.Contains(ai.PackageNames, "com.openai.chatgpt") || !slices.Contains(ai.DomainSuffixes, "chatgpt.com") || ai.Mode != "manual" {
+		t.Fatalf("older AI policy was not upgraded without losing selection: %#v", ai)
+	}
 }
 
 func TestSaveUsesPrivateAtomicFile(t *testing.T) {
@@ -105,6 +126,24 @@ func TestBuildRuntimeProjectsAutoManualAndMissingNode(t *testing.T) {
 	}
 	if strings.Contains(text, "Removed") {
 		t.Fatalf("runtime overlay retained missing manual node: %s", text)
+	}
+}
+
+func TestBuildRuntimeProjectsPackageAndDomainMatches(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runtime", "policies.json")
+	written, err := BuildRuntime(context.Background(), path, t.TempDir(), []Policy{
+		{ID: "ai", RuleSets: []string{"geosite/ai"}, PackageNames: []string{"com.openai.chatgpt"}, DomainSuffixes: []string{"openai.com"}, Mode: "proxy"},
+	})
+	if err != nil || !written {
+		t.Fatalf("BuildRuntime() = %v, %v", written, err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(content)
+	if !strings.Contains(text, `"package_name":["com.openai.chatgpt"]`) || !strings.Contains(text, `"domain_suffix":["openai.com"]`) {
+		t.Fatalf("runtime overlay omitted AI app/domain matches: %s", text)
 	}
 }
 

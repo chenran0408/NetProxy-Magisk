@@ -15,6 +15,7 @@ internal data class PolicyModel(
     @SerialName("group_id") val groupId: String = "default",
     @SerialName("node_tag") val nodeTag: String = "",
     val mode: String = "auto",
+    val region: String = "",
     @SerialName("runtime_tag") val runtimeTag: String = "Proxy",
     @SerialName("chain_available") val chainAvailable: Boolean = false,
     val groups: List<CatalogNodeGroup> = emptyList(),
@@ -24,3 +25,26 @@ internal data class PolicyModel(
 
 @Serializable
 internal data class PolicyResponse(val schema: Int = 1, val policies: List<PolicyModel> = emptyList())
+
+@Serializable
+internal data class ChainProxyModel(
+    val available: Boolean = false,
+    val running: Boolean = false,
+    val front: ChainSelector = ChainSelector(),
+    val landing: ChainSelector = ChainSelector(),
+)
+
+@Serializable
+internal data class ChainSelector(
+    val tag: String = "",
+    val selected: String = "",
+    val items: List<ChainNode> = emptyList(),
+)
+
+@Serializable
+internal data class ChainNode(
+    val tag: String = "",
+    val type: String = "",
+    @SerialName("url_test_time") val urlTestTime: Long? = null,
+    @SerialName("url_test_delay") val urlTestDelay: Int? = null,
+)

@@ -16,16 +16,21 @@ import (
 // Catalog. Runtime generation can later project these selections without
 // changing provider data.
 type Policy struct {
-	ID         string   `json:"id"`
-	Name       string   `json:"name"`
-	Icon       string   `json:"icon"`
-	Type       string   `json:"type"`
-	RuleSets   []string `json:"rule_sets"`
-	Ports      []int    `json:"ports,omitempty"`
-	GroupID    string   `json:"group_id"`
-	NodeTag    string   `json:"node_tag"`
-	Mode       string   `json:"mode"`
-	RuntimeTag string   `json:"runtime_tag"`
+	ID       string   `json:"id"`
+	Name     string   `json:"name"`
+	Icon     string   `json:"icon"`
+	Type     string   `json:"type"`
+	RuleSets []string `json:"rule_sets"`
+	// PackageNames lets an app policy cover connections that never expose a
+	// stable hostname, such as the ChatGPT Android app's API traffic.
+	PackageNames   []string `json:"package_names,omitempty"`
+	DomainSuffixes []string `json:"domain_suffixes,omitempty"`
+	Ports          []int    `json:"ports,omitempty"`
+	GroupID        string   `json:"group_id"`
+	NodeTag        string   `json:"node_tag"`
+	Mode           string   `json:"mode"`
+	Region         string   `json:"region,omitempty"`
+	RuntimeTag     string   `json:"runtime_tag"`
 }
 
 type file struct {
@@ -35,7 +40,19 @@ type file struct {
 
 func Defaults() []Policy {
 	return []Policy{
-		{ID: "ai", Name: "AI", Icon: "AI", Type: "domain", RuleSets: []string{"geosite/category-ai-!cn"}, GroupID: "default", Mode: "auto", RuntimeTag: "Proxy"},
+		{ID: "ai", Name: "AI", Icon: "AI", Type: "domain", RuleSets: []string{"geosite/category-ai-!cn"}, PackageNames: []string{
+			"com.openai.chatgpt",
+			"com.anthropic.claude",
+			"com.google.android.apps.bard",
+			"com.microsoft.copilot",
+			"ai.perplexity.app.android",
+			"ai.x.grok",
+		}, DomainSuffixes: []string{
+			"openai.com",
+			"chatgpt.com",
+			"oaistatic.com",
+			"oaiusercontent.com",
+		}, GroupID: "default", Mode: "auto", RuntimeTag: "Proxy"},
 		{ID: "youtube", Name: "YouTube", Icon: "YT", Type: "domain", RuleSets: []string{"geosite/youtube"}, GroupID: "default", Mode: "auto", RuntimeTag: "Proxy"},
 		{ID: "tiktok", Name: "TikTok", Icon: "TK", Type: "domain", RuleSets: []string{"geosite/tiktok"}, GroupID: "default", Mode: "auto", RuntimeTag: "Proxy"},
 		{ID: "netflix", Name: "Netflix", Icon: "NF", Type: "domain", RuleSets: []string{"geosite/netflix"}, GroupID: "default", Mode: "auto", RuntimeTag: "Proxy"},
@@ -95,6 +112,16 @@ func mergeDefaults(stored []Policy) []Policy {
 	result := make([]Policy, 0, len(Defaults()))
 	for _, item := range Defaults() {
 		if saved, ok := byID[item.ID]; ok {
+			// Older state files predate app/domain matching. Keep the user's
+			// selection while upgrading the built-in AI match set in place.
+			if saved.ID == "ai" {
+				if len(saved.PackageNames) == 0 {
+					saved.PackageNames = item.PackageNames
+				}
+				if len(saved.DomainSuffixes) == 0 {
+					saved.DomainSuffixes = item.DomainSuffixes
+				}
+			}
 			result = append(result, saved)
 		} else {
 			result = append(result, item)
@@ -124,6 +151,9 @@ func Validate(value Policy) error {
 	}
 	if value.Mode == "manual" && value.NodeTag == "" {
 		return errors.New("手动策略必须选择节点")
+	}
+	if value.Mode != "auto" && value.Region != "" {
+		return errors.New("地区自动选择只能用于 auto 模式")
 	}
 	return nil
 }
@@ -172,6 +202,17 @@ func BuildRuntime(ctx context.Context, path, catalogRoot string, policies []Poli
 				continue
 			}
 			target = "Auto/" + group.Group.RuntimeTag
+			if item.Mode == "auto" && item.Region != "" {
+				regionTags := make([]string, 0)
+				for _, node := range group.Nodes {
+					if catalog.RegionKey(node.Tag) == item.Region {
+						regionTags = append(regionTags, node.Tag)
+					}
+				}
+				if len(regionTags) > 0 {
+					target = catalog.RegionAutoTag(group.Group.RuntimeTag, item.Region)
+				}
+			}
 			if item.Mode == "manual" {
 				found := false
 				for _, node := range group.Nodes {
@@ -191,6 +232,20 @@ func BuildRuntime(ctx context.Context, path, catalogRoot string, policies []Poli
 				"rule_set": item.RuleSets,
 				"action":   "route",
 				"outbound": target,
+			})
+		}
+		if len(item.PackageNames) > 0 {
+			rules = append(rules, map[string]any{
+				"package_name": item.PackageNames,
+				"action":       "route",
+				"outbound":     target,
+			})
+		}
+		if len(item.DomainSuffixes) > 0 {
+			rules = append(rules, map[string]any{
+				"domain_suffix": item.DomainSuffixes,
+				"action":        "route",
+				"outbound":      target,
 			})
 		}
 		if len(item.Ports) > 0 {

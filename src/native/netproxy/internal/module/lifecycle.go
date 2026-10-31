@@ -660,6 +660,7 @@ func cleanupRuntimeFiles(options Options) {
 	for _, name := range []string{"providers.json", "outbounds.json", "inbound.json"} {
 		_ = os.Remove(filepath.Join(options.RuntimeDir, name))
 	}
+	_ = os.Remove(filepath.Join(options.SingBoxDir, "00-policies.json"))
 }
 
 func logService(options Options, level, event, result, format string, args ...any) {

@@ -21,6 +21,7 @@ import (
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/policy"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/serviceapi"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/worker"
 )
@@ -56,6 +57,8 @@ func (s *Server) registerResources() {
 	s.route("GET /api/v1/policies", resourceReadTimeout, false, s.readPolicies)
 	s.route("PUT /api/v1/policies/{id}", resourceWriteTimeout, true, s.savePolicy)
 	s.route("POST /api/v1/policies/{id}/url-test", resourceWriteTimeout, true, s.testPolicy)
+	s.route("GET /api/v1/chain", resourceReadTimeout, false, s.readChain)
+	s.route("PUT /api/v1/chain", resourceWriteTimeout, true, s.saveChain)
 	s.route("GET /api/v1/selection", resourceReadTimeout, false, s.readSelection)
 	s.route("PUT /api/v1/selection", resourceWriteTimeout, false, s.saveSelection)
 	s.route("GET /api/v1/mode", resourceReadTimeout, false, s.readMode)
@@ -119,6 +122,7 @@ func (s *Server) savePolicy(ctx context.Context, r *http.Request) (contract.Resu
 		GroupID string `json:"group_id"`
 		NodeTag string `json:"node_tag"`
 		Mode    string `json:"mode"`
+		Region  string `json:"region"`
 	}
 	if err := resourceDecode(r, &input); err != nil {
 		return contract.Result{}, err
@@ -136,6 +140,7 @@ func (s *Server) savePolicy(ctx context.Context, r *http.Request) (contract.Resu
 		current.GroupID = input.GroupID
 	}
 	current.NodeTag = input.NodeTag
+	current.Region = input.Region
 	if input.Mode != "" {
 		current.Mode = input.Mode
 	} else if current.NodeTag == "" {
@@ -190,6 +195,14 @@ func validatePolicyTarget(ctx context.Context, root string, item policy.Policy) 
 		if len(group.Nodes) == 0 {
 			return errors.New("策略分组没有可用节点")
 		}
+		if item.Mode == "auto" && item.Region != "" {
+			for _, node := range group.Nodes {
+				if catalog.RegionKey(node.Tag) == item.Region {
+					return nil
+				}
+			}
+			return fmt.Errorf("策略地区没有可用节点: %s", item.Region)
+		}
 		if item.Mode != "manual" {
 			return nil
 		}
@@ -211,6 +224,114 @@ func policyChainAvailable(runtimeDir string) bool {
 	return err == nil
 }
 
+type chainSelectorView struct {
+	Tag      string                 `json:"tag"`
+	Selected string                 `json:"selected"`
+	Items    []serviceapi.GroupItem `json:"items"`
+}
+
+type chainView struct {
+	Available bool              `json:"available"`
+	Running   bool              `json:"running"`
+	Front     chainSelectorView `json:"front"`
+	Landing   chainSelectorView `json:"landing"`
+}
+
+func (s *Server) readChain(ctx context.Context, r *http.Request) (contract.Result, error) {
+	if _, err := resourceQuery(r); err != nil {
+		return contract.Result{}, err
+	}
+	data := chainView{Available: policyChainAvailable(s.options.RuntimeDir)}
+	if !data.Available || !service.ProcessRunning(s.options.SingBoxPath) {
+		return contract.Success("chain.current", "链式代理设置", data), nil
+	}
+	groups, err := service.ReadGroups(ctx, s.controlOptions())
+	if err != nil {
+		return contract.Result{}, err
+	}
+	data.Running = true
+	for _, group := range groups {
+		switch group.Tag {
+		case catalog.ChainFrontTag:
+			data.Front = chainSelectorView{Tag: group.Tag, Selected: group.Selected, Items: group.Items}
+		case catalog.ChainOutboundTag:
+			data.Landing = chainSelectorView{Tag: group.Tag, Selected: group.Selected, Items: group.Items}
+		}
+	}
+	return contract.Success("chain.current", "链式代理设置", data), nil
+}
+
+func (s *Server) saveChain(ctx context.Context, r *http.Request) (contract.Result, error) {
+	var input struct {
+		Front   string `json:"front"`
+		Landing string `json:"landing"`
+	}
+	if err := resourceDecode(r, &input); err != nil {
+		return contract.Result{}, err
+	}
+	input.Front = strings.TrimSpace(input.Front)
+	input.Landing = strings.TrimSpace(input.Landing)
+	if input.Front == "" || input.Landing == "" {
+		return contract.Result{}, invalid("链式代理必须选择前置和落地节点")
+	}
+	if input.Front == input.Landing {
+		return contract.Result{}, invalid("前置和落地节点不能相同")
+	}
+	if !policyChainAvailable(s.options.RuntimeDir) {
+		return contract.Result{}, invalid("链式代理当前不可用，请先准备至少一个支持链式落地的节点")
+	}
+	if !service.ProcessRunning(s.options.SingBoxPath) {
+		return contract.Result{}, invalid("服务未运行，暂时无法配置链式代理")
+	}
+	groups, err := service.ReadGroups(ctx, s.controlOptions())
+	if err != nil {
+		return contract.Result{}, err
+	}
+	front, frontOK := chainGroupItem(groups, catalog.ChainFrontTag, input.Front)
+	landing, landingOK := chainGroupItem(groups, catalog.ChainOutboundTag, input.Landing)
+	if !frontOK || !landingOK {
+		return contract.Result{}, invalid("链式代理节点不存在或已失效，请刷新后重试")
+	}
+	if front.Tag == landing.Tag {
+		return contract.Result{}, invalid("前置和落地节点不能相同")
+	}
+	if err := service.SelectOutbound(ctx, s.controlOptions(), catalog.ChainFrontTag, front.Tag); err != nil {
+		return contract.Result{}, err
+	}
+	if err := service.SelectOutbound(ctx, s.controlOptions(), catalog.ChainOutboundTag, landing.Tag); err != nil {
+		return contract.Result{}, err
+	}
+	return contract.Success("chain.saved", "链式代理设置已保存", chainView{
+		Available: true,
+		Running:   true,
+		Front:     chainSelectorView{Tag: catalog.ChainFrontTag, Selected: front.Tag, Items: chainGroupItems(groups, catalog.ChainFrontTag)},
+		Landing:   chainSelectorView{Tag: catalog.ChainOutboundTag, Selected: landing.Tag, Items: chainGroupItems(groups, catalog.ChainOutboundTag)},
+	}), nil
+}
+
+func chainGroupItem(groups []serviceapi.Group, tag, itemTag string) (serviceapi.GroupItem, bool) {
+	for _, group := range groups {
+		if group.Tag != tag {
+			continue
+		}
+		for _, item := range group.Items {
+			if item.Tag == itemTag {
+				return item, true
+			}
+		}
+	}
+	return serviceapi.GroupItem{}, false
+}
+
+func chainGroupItems(groups []serviceapi.Group, tag string) []serviceapi.GroupItem {
+	for _, group := range groups {
+		if group.Tag == tag {
+			return group.Items
+		}
+	}
+	return nil
+}
+
 func (s *Server) testPolicy(ctx context.Context, r *http.Request) (contract.Result, error) {
 	if err := resourceEmptyRequest(r); err != nil {
 		return contract.Result{}, err
@@ -224,8 +345,19 @@ func (s *Server) testPolicy(ctx context.Context, r *http.Request) (contract.Resu
 		return contract.Result{}, &contract.Error{Code: "policy.not_found", Message: "策略不存在", HTTPStatus: http.StatusNotFound}
 	}
 	target := "auto"
-	if item.Mode == "manual" && item.NodeTag != "" {
-		target = item.GroupID + "/" + item.NodeTag
+	if item.Mode == "auto" || item.Mode == "manual" {
+		runtimeTag, err := catalog.RuntimeTag(ctx, s.options.CatalogRoot, item.GroupID)
+		if err != nil {
+			return contract.Result{}, err
+		}
+		switch {
+		case item.Mode == "auto" && item.Region != "":
+			target = catalog.RegionAutoTag(runtimeTag, item.Region)
+		case item.Mode == "manual" && item.NodeTag != "":
+			target = runtimeTag + "/" + item.NodeTag
+		default:
+			target = "Auto/" + runtimeTag
+		}
 	}
 	data, err := service.Delay(ctx, s.controlOptions(), target, item.GroupID)
 	return contract.Success("policy.url_test", "策略节点测速完成", data), err
@@ -394,7 +526,11 @@ func (s *Server) delayNodes(ctx context.Context, r *http.Request) (contract.Resu
 	}
 	target := "auto"
 	if input.NodeTag != "" {
-		target = input.GroupID + "/" + input.NodeTag
+		runtimeTag, err := catalog.RuntimeTag(ctx, s.options.CatalogRoot, input.GroupID)
+		if err != nil {
+			return contract.Result{}, err
+		}
+		target = runtimeTag + "/" + input.NodeTag
 	}
 	data, err := service.Delay(ctx, s.controlOptions(), target, input.GroupID)
 	return contract.Success("node.delay", "节点测速完成", data), err

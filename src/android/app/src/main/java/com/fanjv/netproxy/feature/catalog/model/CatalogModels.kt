@@ -46,7 +46,8 @@ internal data class CatalogNode(
     val tag: String,
     val protocol: String = "",
     val server: String = "",
-    val port: Int = 0
+    val port: Int = 0,
+    val region: String = ""
 )
 
 @Serializable

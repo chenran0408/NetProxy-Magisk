@@ -185,7 +185,10 @@ func Prepare(ctx context.Context, options Options, allowEmpty bool) (PrepareResu
 			return PrepareResult{}, err
 		}
 	}
-	policyPath := filepath.Join(options.RuntimeDir, "policies.json")
+	// sing-box merges array values in path order. Keep the policy overlay in
+	// the sing-box config directory with a leading name so its route rules
+	// precede the base config's final catch-all rule.
+	policyPath := filepath.Join(options.SingBoxDir, "00-policies.json")
 	if _, err := policy.BuildRuntime(ctx, policyPath, options.CatalogRoot, policies); err != nil {
 		return PrepareResult{}, err
 	}

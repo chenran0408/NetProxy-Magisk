@@ -46,4 +46,18 @@ class PolicyRepositoryTest {
         assertEquals(70, result.groups.single().items.single().urlTestDelay)
         assertTrue(result.groups.single().items.single().urlTestTime == null)
     }
+
+    @Test fun regionAutoSavesAnEmptyNodeTagAndStringRegion() = runBlocking {
+        val client = ModuleApiClient(TestApiTransport { request ->
+            assertEquals("PUT", request.method)
+            assertEquals("/policies/ai", request.path)
+            assertEquals("default", request.text("group_id"))
+            assertEquals("", request.text("node_tag"))
+            assertEquals("auto", request.text("mode"))
+            assertEquals("us", request.text("region"))
+            apiSuccess("""{"policy":{"id":"ai"},"persisted":true,"runtime_synced":false}""")
+        })
+
+        PolicyRepository(client).save(PolicyModel("ai", "AI", groupId = "default", mode = "auto", region = "us"))
+    }
 }
