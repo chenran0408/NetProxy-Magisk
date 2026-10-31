@@ -54,6 +54,7 @@
     <string name="policies_loading">Loading policies…</string>
     <string name="policy_empty">No policies available</string>
     <string name="policy_auto">Auto</string>
+    <string name="policy_manual">Manual</string>
     <string name="policy_direct">Direct</string>
     <string name="policy_proxy">Proxy</string>
     <string name="policy_chain">Chain proxy</string>
@@ -65,6 +66,15 @@
     <string name="policy_node_not_tested">Not tested</string>
     <string name="policy_node_healthy">Available</string>
     <string name="policy_node_unhealthy">Test failed</string>
+    <string name="policy_group_picker">Policy group</string>
+    <string name="policy_current_selection">Current selection</string>
+    <string name="policy_choose_node">Choose node</string>
+    <string name="policy_auto_in_group">Auto · %1$s</string>
+    <string name="policy_manual_in_group">Manual · %1$s / %2$s</string>
+    <string name="policy_no_nodes">No nodes in this group</string>
+    <string name="policy_search_nodes">Search nodes</string>
+    <string name="policy_expand">Expand policy</string>
+    <string name="policy_collapse">Collapse policy</string>
     <string name="latency_testing">Testing…</string>
     <string name="latency_failed">Test failed</string>
     <string name="latency_timeout">Timeout</string>
