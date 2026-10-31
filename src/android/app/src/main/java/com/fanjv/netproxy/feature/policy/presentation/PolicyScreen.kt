@@ -180,7 +180,8 @@ internal fun PolicyScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(
                             start = 12.dp,
-                            top = 12.dp,
+                            // Keep the first card below the large top-app-bar title.
+                            top = padding.calculateTopPadding() + 56.dp,
                             end = 12.dp,
                             bottom = padding.calculateBottomPadding() + bottomPadding + 84.dp
                         ),
