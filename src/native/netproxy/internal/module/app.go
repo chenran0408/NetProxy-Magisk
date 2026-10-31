@@ -163,6 +163,19 @@ func Prepare(ctx context.Context, options Options, allowEmpty bool) (PrepareResu
 	selectionChanged := false
 	for index, item := range policies {
 		group, ok := groupByID[item.GroupID]
+		if item.Mode == "auto" && item.Region != "" && ok {
+			regionFound := false
+			for _, node := range group.Nodes {
+				if catalog.RegionKey(node.Tag) == item.Region {
+					regionFound = true
+					break
+				}
+			}
+			if !regionFound {
+				policies[index].Region = ""
+				selectionChanged = true
+			}
+		}
 		if item.Mode != "manual" || !ok {
 			if item.Mode == "manual" && !ok {
 				policies[index].Mode, policies[index].NodeTag, selectionChanged = "auto", "", true
@@ -190,6 +203,12 @@ func Prepare(ctx context.Context, options Options, allowEmpty bool) (PrepareResu
 	// precede the base config's final catch-all rule.
 	policyPath := filepath.Join(options.SingBoxDir, "00-policies.json")
 	if _, err := policy.BuildRuntime(ctx, policyPath, options.CatalogRoot, policies); err != nil {
+		return PrepareResult{}, err
+	}
+	if err := os.MkdirAll(filepath.Dir(policyFile), 0o700); err != nil {
+		return PrepareResult{}, err
+	}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(policyFile), "policy-runtime.synced"), []byte("synced\n"), 0o600); err != nil {
 		return PrepareResult{}, err
 	}
 	network, err := configuredNetwork(ctx, options)

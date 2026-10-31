@@ -119,6 +119,7 @@
     <string name="policy_custom_packages">应用包名（每行一个）</string>
     <string name="policy_custom_domains">域名后缀（每行一个）</string>
     <string name="policy_custom_ports">TCP 端口（逗号分隔）</string>
+    <string name="policy_custom_ports_invalid">端口必须是 1 到 65535 之间的整数。</string>
     <string name="policy_custom_match_hint">至少填写一个应用、域名或端口。</string>
     <string name="policy_custom_delete_confirm">确定删除这个自定义策略吗？</string>
     <string name="latency_testing">测试中…</string>

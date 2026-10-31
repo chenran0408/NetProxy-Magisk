@@ -111,6 +111,7 @@
     <string name="policy_custom_packages">App package names (one per line)</string>
     <string name="policy_custom_domains">Domain suffixes (one per line)</string>
     <string name="policy_custom_ports">TCP ports (comma separated)</string>
+    <string name="policy_custom_ports_invalid">Ports must be whole numbers from 1 to 65535.</string>
     <string name="policy_custom_match_hint">Add at least one app, domain, or port.</string>
     <string name="policy_custom_delete_confirm">Delete this custom policy?</string>
     <string name="latency_testing">Testing…</string>

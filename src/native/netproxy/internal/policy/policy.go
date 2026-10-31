@@ -163,6 +163,11 @@ func Validate(value Policy) error {
 	if value.Mode != "auto" && value.Mode != "manual" && value.Mode != "direct" && value.Mode != "proxy" && value.Mode != "chain" {
 		return errors.New("策略模式必须为 auto、manual、direct、proxy 或 chain")
 	}
+	for _, port := range value.Ports {
+		if port < 1 || port > 65535 {
+			return fmt.Errorf("策略端口必须在 1 到 65535 之间: %d", port)
+		}
+	}
 	if !IsBuiltin(value.ID) && len(value.RuleSets) == 0 && len(value.PackageNames) == 0 && len(value.DomainSuffixes) == 0 && len(value.Ports) == 0 {
 		return errors.New("自定义策略至少需要一个应用、域名、端口或规则集匹配条件")
 	}

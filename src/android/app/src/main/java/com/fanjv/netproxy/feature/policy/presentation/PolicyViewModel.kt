@@ -63,7 +63,7 @@ internal class PolicyViewModel(private val repository: PolicyRepository) : ViewM
 
     fun select(policy: PolicyModel, groupId: String, nodeTag: String, mode: String = if (nodeTag.isBlank()) "auto" else "manual", region: String = "") {
         if (_state.value.busyId.isNotBlank()) return
-        _state.update { it.copy(busyId = policy.id, error = "") }
+        _state.update { it.copy(busyId = policy.id, error = "", delays = it.delays - policy.id) }
         viewModelScope.launch {
             runCatching { repository.save(policy.copy(groupId = groupId, nodeTag = nodeTag, mode = mode, region = region)) }
                 .onSuccess { refresh(force = true) }.onFailure { error -> _state.update { it.copy(error = error.message.orEmpty(), busyId = "") } }

@@ -111,6 +111,7 @@
     <string name="policy_custom_packages">Имена пакетов приложений (по одному в строке)</string>
     <string name="policy_custom_domains">Суффиксы доменов (по одному в строке)</string>
     <string name="policy_custom_ports">TCP-порты (через запятую)</string>
+    <string name="policy_custom_ports_invalid">Порты должны быть целыми числами от 1 до 65535.</string>
     <string name="policy_custom_match_hint">Укажите приложение, домен или порт.</string>
     <string name="policy_custom_delete_confirm">Удалить эту пользовательскую стратегию?</string>
     <string name="latency_testing">Проверка…</string>

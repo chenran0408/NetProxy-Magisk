@@ -112,7 +112,7 @@ func (s *Server) readPolicies(ctx context.Context, r *http.Request) (contract.Re
 		return contract.Result{}, err
 	}
 	result := make([]policyView, 0, len(items))
-	runtimeSynced := service.ProcessRunning(s.options.SingBoxPath)
+	runtimeSynced := s.policyRuntimeSynced()
 	chainAvailable := policyChainAvailable(s.options.RuntimeDir)
 	for _, item := range items {
 		result = append(result, policyView{Policy: item, Groups: groups, Persisted: true, RuntimeSynced: runtimeSynced, ChainAvailable: chainAvailable})
@@ -184,10 +184,10 @@ func (s *Server) addPolicy(ctx context.Context, r *http.Request) (contract.Resul
 
 func (s *Server) savePolicy(ctx context.Context, r *http.Request) (contract.Result, error) {
 	var input struct {
-		GroupID        string    `json:"group_id"`
-		NodeTag        string    `json:"node_tag"`
-		Mode           string    `json:"mode"`
-		Region         string    `json:"region"`
+		GroupID        *string   `json:"group_id"`
+		NodeTag        *string   `json:"node_tag"`
+		Mode           *string   `json:"mode"`
+		Region         *string   `json:"region"`
 		Name           *string   `json:"name"`
 		PackageNames   *[]string `json:"package_names"`
 		DomainSuffixes *[]string `json:"domain_suffixes"`
@@ -220,17 +220,32 @@ func (s *Server) savePolicy(ctx context.Context, r *http.Request) (contract.Resu
 	if input.Ports != nil {
 		current.Ports = *input.Ports
 	}
-	if input.GroupID != "" {
-		current.GroupID = input.GroupID
+	if input.GroupID != nil && *input.GroupID != "" {
+		current.GroupID = *input.GroupID
 	}
-	current.NodeTag = input.NodeTag
-	current.Region = input.Region
-	if input.Mode != "" {
-		current.Mode = input.Mode
-	} else if current.NodeTag == "" {
-		current.Mode = "auto"
-	} else {
-		current.Mode = "manual"
+	if input.NodeTag != nil {
+		current.NodeTag = *input.NodeTag
+	}
+	if input.Region != nil {
+		current.Region = *input.Region
+	}
+	if input.Mode != nil && *input.Mode != "" {
+		current.Mode = *input.Mode
+		switch current.Mode {
+		case "auto":
+			current.NodeTag = ""
+		case "manual":
+			current.Region = ""
+		case "direct", "proxy", "chain":
+			current.NodeTag = ""
+			current.Region = ""
+		}
+	} else if input.NodeTag != nil {
+		if current.NodeTag == "" {
+			current.Mode = "auto"
+		} else {
+			current.Mode = "manual"
+		}
 	}
 	if current.Mode == "auto" || current.Mode == "manual" {
 		if err := resourceGroupID(current.GroupID, false); err != nil {
@@ -293,13 +308,30 @@ func (s *Server) deletePolicy(ctx context.Context, r *http.Request) (contract.Re
 }
 
 func (s *Server) syncPolicyRuntime(ctx context.Context) (bool, error) {
+	marker := s.policyRuntimeMarker()
+	_ = os.Remove(marker)
 	if !service.ProcessRunning(s.options.SingBoxPath) {
 		return false, nil
 	}
 	if _, err := module.ManageService(ctx, s.options, "reload"); err != nil {
 		return false, &service.Error{Code: "policy.runtime_sync_failed", Message: fmt.Sprintf("策略已保存，但运行时同步失败: %v", err), Data: map[string]any{"persisted": true, "runtime_synced": false}}
 	}
+	if err := os.WriteFile(marker, []byte("synced\n"), 0o600); err != nil {
+		return false, err
+	}
 	return true, nil
+}
+
+func (s *Server) policyRuntimeMarker() string {
+	return filepath.Join(filepath.Dir(s.options.StateFile), "policy-runtime.synced")
+}
+
+func (s *Server) policyRuntimeSynced() bool {
+	if !service.ProcessRunning(s.options.SingBoxPath) {
+		return false
+	}
+	_, err := os.Stat(s.policyRuntimeMarker())
+	return err == nil
 }
 
 func validatePolicyDefinition(ctx context.Context, s *Server, item policy.Policy) error {
@@ -481,6 +513,12 @@ func (s *Server) testPolicy(ctx context.Context, r *http.Request) (contract.Resu
 	item, found := policy.Find(items, r.PathValue("id"))
 	if !found {
 		return contract.Result{}, &contract.Error{Code: "policy.not_found", Message: "策略不存在", HTTPStatus: http.StatusNotFound}
+	}
+	if item.Mode == "proxy" {
+		return contract.Result{}, invalid("Proxy 模式没有独立测速目标，请先选择地区自动或具体节点")
+	}
+	if item.Mode == "chain" {
+		return contract.Result{}, invalid("链式代理请在链式设置中测试前置和落地节点")
 	}
 	target := "auto"
 	if item.Mode == "auto" || item.Mode == "manual" {

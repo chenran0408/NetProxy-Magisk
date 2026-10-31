@@ -76,6 +76,14 @@ func TestValidateRejectsEmptyCustomPolicy(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsInvalidPolicyPorts(t *testing.T) {
+	for _, port := range []int{0, -1, 65536} {
+		if err := Validate(Policy{ID: "custom-port", Name: "Ports", Type: "custom", PackageNames: []string{"com.example"}, Ports: []int{port}, Mode: "proxy"}); err == nil {
+			t.Fatalf("invalid port %d was accepted", port)
+		}
+	}
+}
+
 func TestDefaultsUseServiceSpecificRuleSets(t *testing.T) {
 	defaults := Defaults()
 	want := map[string]string{

@@ -559,7 +559,7 @@ private fun PolicyCard(
                         TextButton(
                             text = stringResource(if (busy) R.string.policy_testing else R.string.policy_test),
                             modifier = Modifier.weight(1f),
-                            enabled = !busy && group?.nodes?.isNotEmpty() == true,
+                            enabled = !busy && policy.mode != "proxy" && policy.mode != "chain" && group?.nodes?.isNotEmpty() == true,
                             onClick = { onTest(policy) }
                         )
                     }
@@ -716,7 +716,9 @@ private fun CustomPolicyEditor(
     var ports by remember(policy?.id) { mutableStateOf(policy?.ports.orEmpty().joinToString(", ")) }
     val packageItems = packages.lines().map(String::trim).filter(String::isNotBlank).distinct()
     val domainItems = domains.lines().map(String::trim).filter(String::isNotBlank).distinct()
-    val portItems = ports.split(',', '\n', ' ', '，').mapNotNull { it.trim().toIntOrNull() }.distinct()
+    val portTokens = ports.split(',', '\n', ' ', '，').map(String::trim).filter(String::isNotBlank)
+    val portItems = portTokens.mapNotNull(String::toIntOrNull).distinct()
+    val hasInvalidPort = portTokens.any { it.toIntOrNull()?.let { port -> port in 1..65535 } != true }
     val hasMatch = packageItems.isNotEmpty() || domainItems.isNotEmpty() || portItems.isNotEmpty()
 
     Column(
@@ -751,6 +753,13 @@ private fun CustomPolicyEditor(
             maxLines = 1,
             modifier = Modifier.fillMaxWidth()
         )
+        if (hasInvalidPort) {
+            Text(
+                text = stringResource(R.string.policy_custom_ports_invalid),
+                fontSize = 12.sp,
+                color = colorScheme.error
+            )
+        }
         Text(
             text = stringResource(R.string.policy_custom_match_hint),
             fontSize = 12.sp,
@@ -761,7 +770,7 @@ private fun CustomPolicyEditor(
             TextButton(
                 stringResource(if (busy) R.string.policy_testing else R.string.policy_save_custom),
                 modifier = Modifier.weight(1f),
-                enabled = !busy && name.isNotBlank() && hasMatch,
+                enabled = !busy && name.isNotBlank() && hasMatch && !hasInvalidPort,
                 colors = ButtonDefaults.textButtonColorsPrimary(),
                 onClick = { onSave(name.trim(), packageItems, domainItems, portItems) }
             )
@@ -865,7 +874,7 @@ private fun PolicyNodePicker(
             }
             CompactAction(
                 text = stringResource(if (busy) R.string.policy_testing else R.string.policy_test),
-                enabled = !busy && group?.nodes?.isNotEmpty() == true,
+                enabled = !busy && policy.mode != "proxy" && policy.mode != "chain" && group?.nodes?.isNotEmpty() == true,
                 onClick = onTest
             )
         }

@@ -228,6 +228,11 @@ func TestResourcesPolicyListSaveAndValidation(t *testing.T) {
 	if response.Code != http.StatusBadRequest || result.Code != "usage.invalid" {
 		t.Fatalf("不存在的策略节点未被拒绝: %s", response.Body.String())
 	}
+	resourceAssertSuccess(t, server, "PUT", "/api/v1/policies/ai", `{"group_id":"default","node_tag":"","mode":"proxy"}`, "policy.saved", nil)
+	response, result = resourceRequest(t, server, "POST", "/api/v1/policies/ai/url-test", "")
+	if response.Code != http.StatusBadRequest || result.Code != "usage.invalid" || !strings.Contains(response.Body.String(), "Proxy 模式") {
+		t.Fatalf("Proxy 策略测速未明确拒绝: %s", response.Body.String())
+	}
 }
 
 func TestResourcesCustomPolicyCrud(t *testing.T) {
@@ -240,6 +245,12 @@ func TestResourcesCustomPolicyCrud(t *testing.T) {
 	resourceAssertSuccess(t, server, "POST", "/api/v1/policies", `{"name":"Work app","package_names":["com.example.work"],"domain_suffixes":["example.com"],"ports":[]}`, "policy.created", &created)
 	if !strings.HasPrefix(created.Policy.ID, "custom-") {
 		t.Fatalf("unexpected custom policy id: %#v", created)
+	}
+	resourceAssertSuccess(t, server, "PUT", "/api/v1/policies/"+created.Policy.ID, `{"group_id":"default","node_tag":"节点 / 02","mode":"manual"}`, "policy.saved", nil)
+	resourceAssertSuccess(t, server, "PUT", "/api/v1/policies/"+created.Policy.ID, `{"name":"Work app 2"}`, "policy.saved", nil)
+	stored, err := os.ReadFile(filepath.Join(filepath.Dir(server.options.StateFile), "policies.json"))
+	if err != nil || !strings.Contains(string(stored), `"node_tag":"节点 / 02"`) || !strings.Contains(string(stored), `"mode":"manual"`) {
+		t.Fatalf("仅修改自定义策略定义时不应清除出口选择: %s, %v", stored, err)
 	}
 	resourceAssertSuccess(t, server, "PUT", "/api/v1/policies/"+created.Policy.ID, `{"name":"Work app 2","package_names":["com.example.work"],"domain_suffixes":["work.example.com"],"ports":[],"group_id":"default","node_tag":"","mode":"auto","region":""}`, "policy.saved", nil)
 	resourceAssertSuccess(t, server, "DELETE", "/api/v1/policies/"+created.Policy.ID, "", "policy.deleted", nil)
