@@ -107,6 +107,9 @@ check_worker_lifecycle() {
   ! grep -q 'sync_to_live\|restart_proxy_if_needed' "$MODULE_DIR/customize.sh"
   grep -q 'schedule_hot_update' "$MODULE_DIR/customize.sh"
   grep -q 'with_user_data_locks commit_hot_update' "$MODULE_DIR/customize.sh"
+  grep -Fq 'NETPROXY_MODULE_DIR="$LIVE_DIR" "$LIVE_DIR/netproxyctl" catalog list' "$MODULE_DIR/customize.sh"
+  grep -Fq 'NETPROXY_MODULE_DIR="$LIVE_DIR" "$LIVE_DIR/netproxyctl" service stop' "$MODULE_DIR/customize.sh"
+  grep -Fq 'NETPROXY_MODULE_DIR=\"$LIVE_DIR\" \"$LIVE_DIR/netproxyctl\" service start' "$MODULE_DIR/customize.sh"
 }
 
 #######################################

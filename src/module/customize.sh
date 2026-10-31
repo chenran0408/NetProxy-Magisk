@@ -242,7 +242,7 @@ stop_proxy_if_running() {
   # Worker 可能独立运行；即使核心已停止，也必须确认调度进程已退出。
   SERVICE_STOPPED=true
   "$LIVE_DIR/bin/netproxyctl" __internal worker stop --module-dir "$LIVE_DIR" >/dev/null 2>&1 \
-    && "$LIVE_DIR/netproxyctl" service stop >/dev/null 2>&1
+    && NETPROXY_MODULE_DIR="$LIVE_DIR" "$LIVE_DIR/netproxyctl" service stop >/dev/null 2>&1
 }
 
 # 参数: 无。
@@ -252,7 +252,7 @@ restore_live_service() {
   local result=0
   su -c "\"$LIVE_DIR/bin/netproxyctl\" __internal worker start --module-dir \"$LIVE_DIR\"" >/dev/null 2>&1 || result=1
   if [ "$PROXY_WAS_RUNNING" = true ]; then
-    su -c "\"$LIVE_DIR/netproxyctl\" service start" >/dev/null 2>&1 || result=1
+  su -c "NETPROXY_MODULE_DIR=\"$LIVE_DIR\" \"$LIVE_DIR/netproxyctl\" service start" >/dev/null 2>&1 || result=1
   fi
   return "$result"
 }
@@ -442,7 +442,7 @@ with_user_data_locks() (
 # 参数: 无。
 # 返回: 0=当前事务已恢复且快照完成，1=失败。
 synchronize_user_data() {
-  [ "$INSTALL_MODE" = fresh ] || "$LIVE_DIR/netproxyctl" catalog list >/dev/null 2>&1 || return 1
+  [ "$INSTALL_MODE" = fresh ] || NETPROXY_MODULE_DIR="$LIVE_DIR" "$LIVE_DIR/netproxyctl" catalog list >/dev/null 2>&1 || return 1
   with_user_data_locks copy_user_data_locked || return 1
   cleanup_no_telemetry_state
 }
@@ -510,7 +510,7 @@ apply_hot_update() {
   sleep 3
   validate_stage && [ -f "$LIVE_DIR/update" ] || return 1
   stop_proxy_if_running || return 1
-  [ "$INSTALL_MODE" = fresh ] || "$LIVE_DIR/netproxyctl" catalog list >/dev/null 2>&1 || return 1
+  [ "$INSTALL_MODE" = fresh ] || NETPROXY_MODULE_DIR="$LIVE_DIR" "$LIVE_DIR/netproxyctl" catalog list >/dev/null 2>&1 || return 1
   with_user_data_locks commit_hot_update || return 1
   write_log INFO success - "后台热更新已完成，无需重启设备"
   SERVICE_STOPPED=true
