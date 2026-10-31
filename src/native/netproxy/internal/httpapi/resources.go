@@ -169,6 +169,9 @@ func (s *Server) savePolicy(ctx context.Context, r *http.Request) (contract.Resu
 }
 
 func validatePolicyTarget(ctx context.Context, root string, item policy.Policy) error {
+	if item.Mode != "auto" && item.Mode != "manual" {
+		return nil
+	}
 	groups, err := catalog.Scan(ctx, catalog.ScanOptions{Root: root, Type: "all", WithNodes: true})
 	if err != nil {
 		return fmt.Errorf("读取策略分组失败: %w", err)

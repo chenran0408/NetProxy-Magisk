@@ -11,6 +11,7 @@ internal data class PolicyModel(
     val icon: String = "",
     val type: String = "domain",
     @SerialName("rule_sets") val ruleSets: List<String> = emptyList(),
+    val ports: List<Int> = emptyList(),
     @SerialName("group_id") val groupId: String = "default",
     @SerialName("node_tag") val nodeTag: String = "",
     val mode: String = "auto",

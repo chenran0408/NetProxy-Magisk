@@ -62,6 +62,9 @@
     <string name="policies_loading">正在加载策略…</string>
     <string name="policy_empty">暂无可用策略</string>
     <string name="policy_auto">自动</string>
+    <string name="policy_direct">直连</string>
+    <string name="policy_proxy">Proxy</string>
+    <string name="policy_chain">链式代理</string>
     <string name="policy_group">策略组：%1$s</string>
     <string name="policy_test">测速</string>
     <string name="policy_runtime_active">服务运行中</string>

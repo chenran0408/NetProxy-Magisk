@@ -239,7 +239,7 @@ private fun PolicyCard(
     columns: Int,
     itemSize: Int,
     sortMode: Int,
-    onSelect: (PolicyModel, String, String) -> Unit,
+    onSelect: (PolicyModel, String, String, String) -> Unit,
     onTest: (PolicyModel) -> Unit
 ) {
     val group = policy.groups.firstOrNull { it.group.id == policy.groupId }
@@ -259,7 +259,7 @@ private fun PolicyCard(
                     )
                 }
                 Text(
-                    if (policy.mode == "auto") stringResource(R.string.policy_auto) else policy.nodeTag,
+                    policyTargetLabel(policy),
                     color = colorScheme.primary,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
@@ -268,6 +268,20 @@ private fun PolicyCard(
                 )
             }
             RuntimeBadge(policy.runtimeSynced)
+            Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(
+                    "direct" to stringResource(R.string.policy_direct),
+                    "proxy" to stringResource(R.string.policy_proxy),
+                    "chain" to stringResource(R.string.policy_chain)
+                ).forEach { (mode, label) ->
+                    TextButton(
+                        text = label,
+                        enabled = !busy,
+                        colors = if (policy.mode == mode) ButtonDefaults.textButtonColorsPrimary() else ButtonDefaults.textButtonColors(),
+                        onClick = { onSelect(policy, policy.groupId, "", mode) }
+                    )
+                }
+            }
             Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 policy.groups.forEach { item ->
                     TextButton(
@@ -278,7 +292,7 @@ private fun PolicyCard(
                         } else {
                             ButtonDefaults.textButtonColors()
                         },
-                        onClick = { onSelect(policy, item.group.id, "") }
+                        onClick = { onSelect(policy, item.group.id, "", "auto") }
                     )
                 }
             }
@@ -287,9 +301,13 @@ private fun PolicyCard(
                     text = stringResource(R.string.policy_auto),
                     enabled = !busy,
                     colors = if (policy.mode == "auto") ButtonDefaults.textButtonColorsPrimary() else ButtonDefaults.textButtonColors(),
-                    onClick = { onSelect(policy, policy.groupId, "") }
+                    onClick = { onSelect(policy, policy.groupId, "", "auto") }
                 )
-                TextButton(text = stringResource(R.string.policy_test), enabled = !busy, onClick = { onTest(policy) })
+                TextButton(
+                    text = stringResource(R.string.policy_test),
+                    enabled = !busy && (policy.mode == "auto" || policy.mode == "manual"),
+                    onClick = { onTest(policy) }
+                )
             }
             // Keep the policy node picker in the same compact grid language as Nodes.
             policyEntries(group, delay, sortMode).chunked(columns).forEach { rowEntries ->
@@ -304,7 +322,7 @@ private fun PolicyCard(
                                     selected = policy.mode == "auto",
                                     enabled = !busy,
                                     itemSize = itemSize,
-                                    onClick = { onSelect(policy, policy.groupId, "") }
+                                    onClick = { onSelect(policy, policy.groupId, "", "auto") }
                                 )
                             } else {
                                 NodeCard(
@@ -315,7 +333,7 @@ private fun PolicyCard(
                                     selected = policy.mode != "auto" && policy.nodeTag == node.tag,
                                     enabled = !busy,
                                     itemSize = itemSize,
-                                    onClick = { onSelect(policy, policy.groupId, node.tag) }
+                                    onClick = { onSelect(policy, policy.groupId, node.tag, "manual") }
                                 )
                             }
                         }
@@ -327,6 +345,15 @@ private fun PolicyCard(
             }
         }
     }
+}
+
+@Composable
+private fun policyTargetLabel(policy: PolicyModel): String = when (policy.mode) {
+    "direct" -> stringResource(R.string.policy_direct)
+    "proxy" -> stringResource(R.string.policy_proxy)
+    "chain" -> stringResource(R.string.policy_chain)
+    "auto" -> stringResource(R.string.policy_auto)
+    else -> policy.nodeTag
 }
 
 private fun policyEntries(

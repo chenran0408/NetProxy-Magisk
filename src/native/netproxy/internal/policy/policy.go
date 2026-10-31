@@ -21,6 +21,7 @@ type Policy struct {
 	Icon       string   `json:"icon"`
 	Type       string   `json:"type"`
 	RuleSets   []string `json:"rule_sets"`
+	Ports      []int    `json:"ports,omitempty"`
 	GroupID    string   `json:"group_id"`
 	NodeTag    string   `json:"node_tag"`
 	Mode       string   `json:"mode"`
@@ -40,6 +41,7 @@ func Defaults() []Policy {
 		{ID: "netflix", Name: "Netflix", Icon: "NF", Type: "domain", RuleSets: []string{"geosite/netflix"}, GroupID: "default", Mode: "auto", RuntimeTag: "Proxy"},
 		{ID: "github", Name: "GitHub", Icon: "GH", Type: "domain", RuleSets: []string{"geosite/github"}, GroupID: "default", Mode: "auto", RuntimeTag: "Proxy"},
 		{ID: "google", Name: "Google", Icon: "G", Type: "domain", RuleSets: []string{"geosite/google"}, GroupID: "default", Mode: "auto", RuntimeTag: "Proxy"},
+		{ID: "fcm", Name: "Google FCM", Icon: "FCM", Type: "domain", RuleSets: []string{"fcm"}, Ports: []int{5228, 5229, 5230}, GroupID: "default", Mode: "proxy", RuntimeTag: "Proxy"},
 	}
 }
 
@@ -114,10 +116,10 @@ func Validate(value Policy) error {
 	if strings.TrimSpace(value.ID) == "" || strings.TrimSpace(value.Name) == "" {
 		return errors.New("策略 ID 和名称不能为空")
 	}
-	if value.Mode != "auto" && value.Mode != "manual" {
-		return errors.New("策略模式必须为 auto 或 manual")
+	if value.Mode != "auto" && value.Mode != "manual" && value.Mode != "direct" && value.Mode != "proxy" && value.Mode != "chain" {
+		return errors.New("策略模式必须为 auto、manual、direct、proxy 或 chain")
 	}
-	if value.GroupID == "" {
+	if (value.Mode == "auto" || value.Mode == "manual") && value.GroupID == "" {
 		return errors.New("策略分组不能为空")
 	}
 	if value.Mode == "manual" && value.NodeTag == "" {
@@ -139,30 +141,66 @@ func BuildRuntime(ctx context.Context, path, catalogRoot string, policies []Poli
 		byID[group.Group.ID] = group
 	}
 	rules := make([]map[string]any, 0, len(policies))
+	chainAvailable := false
+	if _, err := os.Stat(filepath.Join(filepath.Dir(path), "chain-landing.json")); err == nil {
+		chainAvailable = true
+	}
 	for _, item := range policies {
-		group, ok := byID[item.GroupID]
-		if !ok || len(group.Nodes) == 0 {
+		target := item.RuntimeTag
+		if target == "" {
+			target = "Proxy"
+		}
+		switch item.Mode {
+		case "direct":
+			target = "direct"
+		case "proxy":
+			target = "Proxy"
+		case "chain":
+			if chainAvailable {
+				target = catalog.ChainOutboundTag
+			} else {
+				target = "Proxy"
+			}
+		case "auto", "manual":
+			// Group-backed modes are resolved below.
+		default:
 			continue
 		}
-		target := "Auto/" + group.Group.RuntimeTag
-		if item.Mode == "manual" {
-			found := false
-			for _, node := range group.Nodes {
-				if node.Tag == item.NodeTag {
-					target = group.Group.RuntimeTag + "/" + node.Tag
-					found = true
-					break
+		if item.Mode == "auto" || item.Mode == "manual" {
+			group, ok := byID[item.GroupID]
+			if !ok || len(group.Nodes) == 0 {
+				continue
+			}
+			target = "Auto/" + group.Group.RuntimeTag
+			if item.Mode == "manual" {
+				found := false
+				for _, node := range group.Nodes {
+					if node.Tag == item.NodeTag {
+						target = group.Group.RuntimeTag + "/" + node.Tag
+						found = true
+						break
+					}
+				}
+				if !found {
+					target = "Auto/" + group.Group.RuntimeTag
 				}
 			}
-			if !found {
-				target = "Auto/" + group.Group.RuntimeTag
-			}
 		}
-		rules = append(rules, map[string]any{
-			"rule_set": item.RuleSets,
-			"action":   "route",
-			"outbound": target,
-		})
+		if len(item.RuleSets) > 0 {
+			rules = append(rules, map[string]any{
+				"rule_set": item.RuleSets,
+				"action":   "route",
+				"outbound": target,
+			})
+		}
+		if len(item.Ports) > 0 {
+			rules = append(rules, map[string]any{
+				"network":  "tcp",
+				"port":     item.Ports,
+				"action":   "route",
+				"outbound": target,
+			})
+		}
 	}
 	if len(rules) == 0 {
 		_ = os.Remove(path)

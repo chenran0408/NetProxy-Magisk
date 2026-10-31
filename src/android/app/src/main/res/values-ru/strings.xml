@@ -54,6 +54,9 @@
     <string name="policies_loading">Загрузка стратегий…</string>
     <string name="policy_empty">Нет доступных стратегий</string>
     <string name="policy_auto">Авто</string>
+    <string name="policy_direct">Прямое подключение</string>
+    <string name="policy_proxy">Proxy</string>
+    <string name="policy_chain">Цепочка</string>
     <string name="policy_group">Группа: %1$s</string>
     <string name="policy_test">Проверить узлы</string>
     <string name="policy_runtime_active">Служба запущена</string>

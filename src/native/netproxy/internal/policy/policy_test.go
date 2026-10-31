@@ -2,6 +2,7 @@ package policy
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -34,8 +35,8 @@ func TestLoadMissingReturnsDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 6 {
-		t.Fatalf("want six defaults, got %d", len(items))
+	if len(items) != 7 {
+		t.Fatalf("want seven defaults, got %d", len(items))
 	}
 }
 
@@ -52,6 +53,10 @@ func TestDefaultsUseServiceSpecificRuleSets(t *testing.T) {
 		if !ok || len(item.RuleSets) != 1 || item.RuleSets[0] != ruleSet {
 			t.Fatalf("%s rule sets = %#v, want [%s]", id, item.RuleSets, ruleSet)
 		}
+	}
+	fcm, ok := Find(defaults, "fcm")
+	if !ok || fcm.Mode != "proxy" || len(fcm.RuleSets) != 1 || fcm.RuleSets[0] != "fcm" || !strings.Contains(fmt.Sprint(fcm.Ports), "5228") {
+		t.Fatalf("FCM default = %#v", fcm)
 	}
 }
 
@@ -100,5 +105,49 @@ func TestBuildRuntimeProjectsAutoManualAndMissingNode(t *testing.T) {
 	}
 	if strings.Contains(text, "Removed") {
 		t.Fatalf("runtime overlay retained missing manual node: %s", text)
+	}
+}
+
+func TestBuildRuntimeKeepsPolicyPortsWithSelectedTarget(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(t.TempDir(), "runtime", "policies.json")
+	written, err := BuildRuntime(context.Background(), path, root, []Policy{
+		{ID: "fcm", RuleSets: []string{"fcm"}, Ports: []int{5228, 5229, 5230}, Mode: "direct"},
+	})
+	if err != nil || !written {
+		t.Fatalf("BuildRuntime() = %v, %v", written, err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(content)
+	if !strings.Contains(text, `"rule_set":["fcm"]`) || !strings.Contains(text, `"network":"tcp"`) || !strings.Contains(text, `"port":[5228,5229,5230]`) || !strings.Contains(text, `"outbound":"direct"`) {
+		t.Fatalf("FCM route overlay lost domain/port target: %s", text)
+	}
+}
+
+func TestBuildRuntimeProjectsIndependentPolicyTargets(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(t.TempDir(), "runtime", "policies.json")
+	items := []Policy{
+		{ID: "direct", RuleSets: []string{"fcm"}, Mode: "direct"},
+		{ID: "proxy", RuleSets: []string{"geosite/google"}, Mode: "proxy"},
+		{ID: "chain", RuleSets: []string{"geosite/youtube"}, Mode: "chain"},
+	}
+	written, err := BuildRuntime(context.Background(), path, root, items)
+	if err != nil || !written {
+		t.Fatalf("BuildRuntime() = %v, %v", written, err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(content)
+	if !strings.Contains(text, `"outbound":"direct"`) || !strings.Contains(text, `"outbound":"Proxy"`) {
+		t.Fatalf("independent targets missing: %s", text)
+	}
+	if strings.Contains(text, `"outbound":"链式代理"`) {
+		t.Fatal("chain target must fall back when runtime chain is unavailable")
 	}
 }

@@ -46,10 +46,10 @@ internal class PolicyViewModel(private val repository: PolicyRepository) : ViewM
         }
     }
 
-    fun select(policy: PolicyModel, groupId: String, nodeTag: String) {
+    fun select(policy: PolicyModel, groupId: String, nodeTag: String, mode: String = if (nodeTag.isBlank()) "auto" else "manual") {
         _state.update { it.copy(busyId = policy.id) }
         viewModelScope.launch {
-            runCatching { repository.save(policy.copy(groupId = groupId, nodeTag = nodeTag, mode = if (nodeTag.isBlank()) "auto" else "manual")) }
+            runCatching { repository.save(policy.copy(groupId = groupId, nodeTag = nodeTag, mode = mode)) }
                 .onSuccess { refresh() }.onFailure { error -> _state.update { it.copy(error = error.message.orEmpty(), busyId = "") } }
         }
     }
