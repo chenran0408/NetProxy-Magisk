@@ -1,5 +1,6 @@
 package com.fanjv.netproxy.feature.policy.presentation
 
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,6 +33,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
@@ -40,9 +45,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.core.content.edit
 import com.fanjv.netproxy.R
 import com.fanjv.netproxy.core.di.netProxyViewModel
 import com.fanjv.netproxy.feature.catalog.model.CatalogNode
+import com.fanjv.netproxy.feature.catalog.model.CatalogNodeGroup
 import com.fanjv.netproxy.feature.policy.model.PolicyModel
 import com.fanjv.netproxy.feature.catalog.model.NodeDelayResult
 import com.fanjv.netproxy.feature.catalog.presentation.nodes.list.components.NodeCard
@@ -55,6 +62,10 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
+import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
+import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
+import com.fanjv.netproxy.core.ui.component.TopBarMenuAction
+import com.fanjv.netproxy.core.ui.component.TopBarMoreMenu
 
 @Composable
 internal fun PolicyScreen(
@@ -63,11 +74,46 @@ internal fun PolicyScreen(
     viewModel: PolicyViewModel = netProxyViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val displayPreferences = remember(context) {
+        context.getSharedPreferences("node_display", Context.MODE_PRIVATE)
+    }
+    var showDisplaySettings by remember { mutableStateOf(false) }
+    var showMoreMenu by remember { mutableStateOf(false) }
+    var layoutDensity by remember {
+        mutableIntStateOf(
+            displayPreferences.getInt(
+                "density",
+                displayPreferences.getInt("columns", 2) - 1
+            ).coerceIn(0, 2)
+        )
+    }
+    var itemSize by remember {
+        mutableIntStateOf(displayPreferences.getInt("item_size", 0).coerceIn(0, 2))
+    }
+    var sortMode by remember {
+        mutableIntStateOf(displayPreferences.getInt("sort", 0).coerceIn(0, 3))
+    }
     LaunchedEffect(isActive) { if (isActive) viewModel.refresh() }
     Scaffold(topBar = {
         TopAppBar(
             title = stringResource(R.string.policies),
-            actions = { IconButton(onClick = viewModel::refresh) { Icon(Icons.Rounded.Refresh, stringResource(R.string.common_update)) } }
+            actions = {
+                IconButton(onClick = viewModel::refresh) {
+                    Icon(Icons.Rounded.Refresh, stringResource(R.string.common_update))
+                }
+                TopBarMoreMenu(
+                    expanded = showMoreMenu,
+                    onExpandedChange = { showMoreMenu = it },
+                    actions = listOf(
+                        TopBarMenuAction(
+                            text = stringResource(R.string.node_display_settings),
+                            onClick = { showDisplaySettings = true }
+                        )
+                    ),
+                    contentDescription = stringResource(R.string.more_actions)
+                )
+            }
         )
     }) { padding ->
         if (state.loading && state.policies.isEmpty()) {
@@ -83,14 +129,88 @@ internal fun PolicyScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 if (state.error.isNotBlank()) item { Text(state.error, color = colorScheme.error) }
-                items(state.policies, key = PolicyModel::id) { policy -> PolicyCard(policy, state.busyId == policy.id, state.delays[policy.id], viewModel::select, viewModel::test) }
+                items(state.policies, key = PolicyModel::id) { policy ->
+                    PolicyCard(
+                        policy = policy,
+                        busy = state.busyId == policy.id,
+                        delay = state.delays[policy.id],
+                        columns = layoutDensity + 1,
+                        itemSize = itemSize,
+                        sortMode = sortMode,
+                        onSelect = viewModel::select,
+                        onTest = viewModel::test
+                    )
+                }
             }
+        }
+    }
+    OverlayBottomSheet(
+        show = showDisplaySettings,
+        title = stringResource(R.string.node_display_settings),
+        onDismissRequest = { showDisplaySettings = false }
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            OverlayDropdownPreference(
+                title = stringResource(R.string.node_sort_default),
+                items = listOf(
+                    stringResource(R.string.node_sort_default),
+                    stringResource(R.string.node_sort_name),
+                    stringResource(R.string.node_sort_protocol),
+                    stringResource(R.string.node_sort_latency)
+                ),
+                selectedIndex = sortMode,
+                onSelectedIndexChange = { index ->
+                    sortMode = index
+                    displayPreferences.edit { putInt("sort", index) }
+                }
+            )
+            OverlayDropdownPreference(
+                title = stringResource(R.string.node_density),
+                items = listOf(
+                    stringResource(R.string.node_density_spacious),
+                    stringResource(R.string.node_density_standard),
+                    stringResource(R.string.node_density_compact)
+                ),
+                selectedIndex = layoutDensity,
+                onSelectedIndexChange = { index ->
+                    layoutDensity = index
+                    displayPreferences.edit { putInt("density", index) }
+                }
+            )
+            OverlayDropdownPreference(
+                title = stringResource(R.string.node_card_size),
+                items = listOf(
+                    stringResource(R.string.node_card_size_standard),
+                    stringResource(R.string.node_card_size_compact),
+                    stringResource(R.string.node_card_size_minimal)
+                ),
+                selectedIndex = itemSize,
+                onSelectedIndexChange = { index ->
+                    itemSize = index
+                    displayPreferences.edit { putInt("item_size", index) }
+                }
+            )
+            TextButton(
+                text = stringResource(R.string.common_done),
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.textButtonColorsPrimary(),
+                onClick = { showDisplaySettings = false }
+            )
         }
     }
 }
 
 @Composable
-private fun PolicyCard(policy: PolicyModel, busy: Boolean, delay: NodeDelayResult?, onSelect: (PolicyModel, String, String) -> Unit, onTest: (PolicyModel) -> Unit) {
+private fun PolicyCard(
+    policy: PolicyModel,
+    busy: Boolean,
+    delay: NodeDelayResult?,
+    columns: Int,
+    itemSize: Int,
+    sortMode: Int,
+    onSelect: (PolicyModel, String, String) -> Unit,
+    onTest: (PolicyModel) -> Unit
+) {
     val group = policy.groups.firstOrNull { it.group.id == policy.groupId }
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -140,28 +260,57 @@ private fun PolicyCard(policy: PolicyModel, busy: Boolean, delay: NodeDelayResul
                 )
                 TextButton(text = stringResource(R.string.policy_test), enabled = !busy, onClick = { onTest(policy) })
             }
-            // Keep the policy node picker in the same compact two-column language as Nodes.
-            group?.nodes?.chunked(2)?.forEach { rowNodes ->
+            // Keep the policy node picker in the same compact grid language as Nodes.
+            policyEntries(group, delay, sortMode).chunked(columns).forEach { rowEntries ->
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    rowNodes.forEach { node ->
+                    rowEntries.forEach { node ->
                         Box(modifier = Modifier.weight(1f)) {
-                            NodeCard(
-                                title = node.tag,
-                                summary = nodeSummary(node, delay),
-                                protocol = node.protocol.uppercase().ifBlank { "NODE" },
-                                latency = nodeLatency(node, delay),
-                                selected = policy.mode != "auto" && policy.nodeTag == node.tag,
-                                enabled = !busy,
-                                itemSize = 1,
-                                onClick = { onSelect(policy, policy.groupId, node.tag) }
-                            )
+                            if (node == null) {
+                                NodeCard(
+                                    title = stringResource(R.string.node_auto_fastest),
+                                    summary = stringResource(R.string.node_auto_test),
+                                    protocol = "AUTO",
+                                    selected = policy.mode == "auto",
+                                    enabled = !busy,
+                                    itemSize = itemSize,
+                                    onClick = { onSelect(policy, policy.groupId, "") }
+                                )
+                            } else {
+                                NodeCard(
+                                    title = node.tag,
+                                    summary = nodeSummary(node, delay),
+                                    protocol = node.protocol.uppercase().ifBlank { "NODE" },
+                                    latency = nodeLatency(node, delay),
+                                    selected = policy.mode != "auto" && policy.nodeTag == node.tag,
+                                    enabled = !busy,
+                                    itemSize = itemSize,
+                                    onClick = { onSelect(policy, policy.groupId, node.tag) }
+                                )
+                            }
                         }
                     }
-                    if (rowNodes.size == 1) Spacer(modifier = Modifier.weight(1f))
+                    if (rowEntries.size < columns) {
+                        repeat(columns - rowEntries.size) { Spacer(modifier = Modifier.weight(1f)) }
+                    }
                 }
             }
         }
     }
+}
+
+private fun policyEntries(
+    group: CatalogNodeGroup?,
+    delay: NodeDelayResult?,
+    sortMode: Int
+): List<CatalogNode?> {
+    if (group == null) return emptyList()
+    val nodes = when (sortMode) {
+        1 -> group.nodes.sortedBy { it.tag.lowercase() }
+        2 -> group.nodes.sortedBy { it.protocol.lowercase() }
+        3 -> group.nodes.sortedBy { nodeLatencyValue(it, delay) }
+        else -> group.nodes
+    }
+    return listOf(null) + nodes
 }
 
 @Composable
@@ -214,6 +363,9 @@ private fun nodeLatency(node: CatalogNode, delay: NodeDelayResult?): String? {
         else -> "failed"
     }
 }
+
+private fun nodeLatencyValue(node: CatalogNode, delay: NodeDelayResult?): Int =
+    nodeResult(node, delay)?.urlTestDelay ?: Int.MAX_VALUE
 
 @Composable
 private fun nodeSummary(node: CatalogNode, delay: NodeDelayResult?): String =
