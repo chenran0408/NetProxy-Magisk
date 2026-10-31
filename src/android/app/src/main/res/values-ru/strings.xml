@@ -146,7 +146,7 @@
     <string name="node_edit">Изменить узел</string>
     <string name="node_export">Экспортировать узел</string>
     <string name="node_delete">Удалить узел</string>
-    <string name="node_auto_fastest">Auto-Fastest</string>
+    <string name="node_auto_fastest">Авто — быстрее</string>
     <string name="node_auto_test">Автопроверка</string>
     <string name="node_group_empty">В этой группе нет узлов</string>
     <string name="node_local_config">Локальная конфигурация</string>

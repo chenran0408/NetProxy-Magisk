@@ -24,6 +24,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Notifications
@@ -435,19 +437,21 @@ private fun PolicyCard(
             }
             if (expanded) {
                 if (policy.isCustom) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(
-                            text = stringResource(R.string.policy_edit_custom),
-                            modifier = Modifier.weight(1f),
-                            enabled = !busy,
-                            onClick = onEditCustom
-                        )
-                        TextButton(
-                            text = stringResource(R.string.policy_delete_custom),
-                            modifier = Modifier.weight(1f),
-                            enabled = !busy,
-                            onClick = onDeleteCustom
-                        )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        IconButton(enabled = !busy, onClick = onEditCustom) {
+                            Icon(
+                                Icons.Rounded.Edit,
+                                contentDescription = stringResource(R.string.policy_edit_custom),
+                                tint = colorScheme.onSurfaceVariantActions
+                            )
+                        }
+                        IconButton(enabled = !busy, onClick = onDeleteCustom) {
+                            Icon(
+                                Icons.Rounded.Delete,
+                                contentDescription = stringResource(R.string.policy_delete_custom),
+                                tint = colorScheme.error
+                            )
+                        }
                     }
                 }
                 val modeItems = buildList {
