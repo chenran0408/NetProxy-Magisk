@@ -7,9 +7,12 @@ import com.fanjv.netproxy.feature.catalog.model.NodeDelayResult
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.put
+import kotlinx.coroutines.flow.map
 
 internal class PolicyRepository(private val client: ModuleApiClient) {
     suspend fun list(): List<PolicyModel> = client.read<PolicyResponse>("/policies").policies
+
+    fun observeGroups() = client.observe(setOf("groups")).map { result -> result.map { Unit } }
 
     suspend fun save(policy: PolicyModel) {
         client.put("/policies/${policy.id}", buildJsonObject {

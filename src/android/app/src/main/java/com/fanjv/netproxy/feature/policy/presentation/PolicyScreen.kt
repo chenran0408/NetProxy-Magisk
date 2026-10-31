@@ -31,7 +31,6 @@ import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -45,6 +44,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.core.content.edit
 import com.fanjv.netproxy.R
 import com.fanjv.netproxy.core.di.netProxyViewModel
@@ -57,10 +57,15 @@ import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
+import top.yukonga.miuix.kmp.basic.PullToRefresh
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TopAppBar
+import top.yukonga.miuix.kmp.basic.rememberPullToRefreshState
+import com.fanjv.netproxy.core.ui.component.BlurredBar
+import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
@@ -94,27 +99,44 @@ internal fun PolicyScreen(
     var sortMode by remember {
         mutableIntStateOf(displayPreferences.getInt("sort", 0).coerceIn(0, 3))
     }
-    LaunchedEffect(isActive) { if (isActive) viewModel.refresh() }
+    val scrollBehavior = MiuixScrollBehavior()
+    val pullToRefreshState = rememberPullToRefreshState()
+    val backdrop = rememberBlurBackdrop()
+    val barColor = if (backdrop != null) Color.Transparent else colorScheme.surface
+    val refreshTexts = listOf(
+        stringResource(R.string.refresh_pulling),
+        stringResource(R.string.refresh_release),
+        stringResource(R.string.refresh_refresh),
+        stringResource(R.string.refresh_complete),
+    )
+    LifecycleResumeEffect(isActive) {
+        viewModel.setVisible(isActive)
+        onPauseOrDispose { if (isActive) viewModel.setVisible(false) }
+    }
     Scaffold(topBar = {
-        TopAppBar(
-            title = stringResource(R.string.policies),
-            actions = {
-                IconButton(onClick = viewModel::refresh) {
-                    Icon(Icons.Rounded.Refresh, stringResource(R.string.common_update))
+        BlurredBar(backdrop) {
+            TopAppBar(
+                color = barColor,
+                title = stringResource(R.string.policies),
+                scrollBehavior = scrollBehavior,
+                actions = {
+                    IconButton(onClick = viewModel::refresh) {
+                        Icon(Icons.Rounded.Refresh, stringResource(R.string.common_update))
+                    }
+                    TopBarMoreMenu(
+                        expanded = showMoreMenu,
+                        onExpandedChange = { showMoreMenu = it },
+                        actions = listOf(
+                            TopBarMenuAction(
+                                text = stringResource(R.string.node_display_settings),
+                                onClick = { showDisplaySettings = true }
+                            )
+                        ),
+                        contentDescription = stringResource(R.string.more_actions)
+                    )
                 }
-                TopBarMoreMenu(
-                    expanded = showMoreMenu,
-                    onExpandedChange = { showMoreMenu = it },
-                    actions = listOf(
-                        TopBarMenuAction(
-                            text = stringResource(R.string.node_display_settings),
-                            onClick = { showDisplaySettings = true }
-                        )
-                    ),
-                    contentDescription = stringResource(R.string.more_actions)
-                )
-            }
-        )
+            )
+        }
     }) { padding ->
         if (state.loading && state.policies.isEmpty()) {
             Text(stringResource(R.string.policies_loading), modifier = Modifier.padding(padding).padding(20.dp))
@@ -123,23 +145,32 @@ internal fun PolicyScreen(
         } else if (state.policies.isEmpty()) {
             Text(stringResource(R.string.policy_empty), modifier = Modifier.padding(padding).padding(20.dp))
         } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 12.dp, top = padding.calculateTopPadding() + 12.dp, end = 12.dp, bottom = padding.calculateBottomPadding() + bottomPadding + 84.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+            PullToRefresh(
+                isRefreshing = state.loading,
+                onRefresh = viewModel::refresh,
+                pullToRefreshState = pullToRefreshState,
+                topAppBarScrollBehavior = scrollBehavior,
+                refreshTexts = refreshTexts,
+                contentPadding = PaddingValues(top = padding.calculateTopPadding())
             ) {
-                if (state.error.isNotBlank()) item { Text(state.error, color = colorScheme.error) }
-                items(state.policies, key = PolicyModel::id) { policy ->
-                    PolicyCard(
-                        policy = policy,
-                        busy = state.busyId == policy.id,
-                        delay = state.delays[policy.id],
-                        columns = layoutDensity + 1,
-                        itemSize = itemSize,
-                        sortMode = sortMode,
-                        onSelect = viewModel::select,
-                        onTest = viewModel::test
-                    )
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 12.dp, top = 12.dp, end = 12.dp, bottom = padding.calculateBottomPadding() + bottomPadding + 84.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (state.error.isNotBlank()) item { Text(state.error, color = colorScheme.error) }
+                    items(state.policies, key = PolicyModel::id) { policy ->
+                        PolicyCard(
+                            policy = policy,
+                            busy = state.busyId == policy.id,
+                            delay = state.delays[policy.id],
+                            columns = layoutDensity + 1,
+                            itemSize = itemSize,
+                            sortMode = sortMode,
+                            onSelect = viewModel::select,
+                            onTest = viewModel::test
+                        )
+                    }
                 }
             }
         }
