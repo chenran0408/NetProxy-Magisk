@@ -113,14 +113,18 @@ func (runtimeOutboundOptionsRegistry) CreateOptions(outboundType string) (any, b
 type runtimeProviderOptionsRegistry struct{}
 
 func (runtimeProviderOptionsRegistry) OptionTypes() []string {
-	return []string{C.ProviderTypeLocal}
+	return []string{C.ProviderTypeInline, C.ProviderTypeLocal}
 }
 
 func (runtimeProviderOptionsRegistry) CreateOptions(providerType string) (any, bool) {
-	if providerType == C.ProviderTypeLocal {
+	switch providerType {
+	case C.ProviderTypeInline:
+		return new(option.ProviderInlineOptions), true
+	case C.ProviderTypeLocal:
 		return new(option.ProviderLocalOptions), true
+	default:
+		return nil, false
 	}
-	return nil, false
 }
 
 // Context registers only the option types required to parse provider documents.

@@ -7,6 +7,10 @@ on:
         description: 是否同时执行 Android 单元测试与 Lint
         type: boolean
         default: false
+      no-telemetry:
+        description: 是否构建不包含设备统计的 Native 变体
+        type: boolean
+        default: false
     secrets:
       ANDROID_KEYSTORE_BASE64:
         required: true
@@ -49,6 +53,7 @@ jobs:
         with:
           posthog-project-token: ${{ vars.POSTHOG_PROJECT_TOKEN }}
           posthog-host: ${{ vars.POSTHOG_HOST }}
+          no-telemetry: ${{ inputs.no-telemetry }}
 
       - name: 保存已验证的模块内容
         uses: actions/upload-artifact@v7

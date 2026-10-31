@@ -12,6 +12,9 @@ import (
 	"encoding/json/jsontext"
 	json "encoding/json/v2"
 	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
+	C "github.com/sagernet/sing-box/constant"
+	"github.com/sagernet/sing-box/option"
 )
 
 func TestScanAndBuildRuntime(t *testing.T) {
@@ -324,6 +327,52 @@ func TestBuildRuntimeFallbackAndEmpty(t *testing.T) {
 		OutboundsOutput: filepath.Join(emptyRoot, "outbounds.json"), AllowEmpty: true,
 	}); err != nil {
 		t.Fatalf("allow-empty failed: %v", err)
+	}
+}
+
+func TestBuildRuntimeAddsEphemeralChainCopies(t *testing.T) {
+	root := t.TempDir()
+	writeGroup(t, root, "default", "前置订阅", "subscription", "香港")
+	writeGroup(t, root, "landing", "落地订阅", "subscription", "美国")
+	userProvider := readFile(t, filepath.Join(root, "landing", "provider.json"))
+	runtimeDir := t.TempDir()
+	if _, err := BuildRuntime(t.Context(), RuntimeOptions{
+		Root: root, ProvidersOutput: filepath.Join(runtimeDir, "providers.json"),
+		OutboundsOutput: filepath.Join(runtimeDir, "outbounds.json"),
+		Selection:       moduleconfig.Selection{ActiveGroupID: "default"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	providers := readFile(t, filepath.Join(runtimeDir, "providers.json"))
+	outbounds := readFile(t, filepath.Join(runtimeDir, "outbounds.json"))
+	for _, expected := range []string{
+		`"type": "inline"`, `"tag": "链式落地"`, `"tag": "前置订阅/香港"`,
+		`"detour": "链式前置"`,
+	} {
+		if !strings.Contains(providers, expected) {
+			t.Fatalf("chain provider missing %s: %s", expected, providers)
+		}
+	}
+	for _, expected := range []string{`"tag": "链式前置"`, `"tag": "链式代理"`, `"default": "链式落地/前置订阅/香港"`, `"outbounds": [`} {
+		if !strings.Contains(outbounds, expected) {
+			t.Fatalf("chain outbound missing %s: %s", expected, outbounds)
+		}
+	}
+	if got := readFile(t, filepath.Join(root, "landing", "provider.json")); got != userProvider {
+		t.Fatal("chain generation modified the persisted provider")
+	}
+}
+
+func TestChainProviderEligibilityRejectsEndpointsAndUnsupportedProtocols(t *testing.T) {
+	if ChainProviderEligible(provider.Document{Outbounds: []option.Outbound{{
+		Type: C.TypeSSH, Tag: "ssh", Options: new(option.SSHOutboundOptions),
+	}}}) {
+		t.Fatal("SSH provider should not be a chain landing provider")
+	}
+	if ChainProviderEligible(provider.Document{Endpoints: []option.Endpoint{{
+		Type: C.TypeWireGuard, Tag: "wg", Options: new(option.WireGuardEndpointOptions),
+	}}}) {
+		t.Fatal("endpoint provider should not be a chain landing provider")
 	}
 }
 

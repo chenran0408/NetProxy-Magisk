@@ -1,3 +1,5 @@
+//go:build !netproxy_no_telemetry
+
 // Package telemetry 记录模块设备的活跃与核心启动结果，不接收配置或节点数据。
 package telemetry
 

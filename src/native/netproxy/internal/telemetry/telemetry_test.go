@@ -1,3 +1,5 @@
+//go:build !netproxy_no_telemetry
+
 package telemetry
 
 import (

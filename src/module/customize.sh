@@ -286,6 +286,18 @@ persistent_entries() {
   esac
 }
 
+# 参数: 无。
+# 返回: 0=模块明确标记为无 Telemetry 构建。
+is_no_telemetry_build() {
+  [ -f "$MODPATH/no-telemetry" ]
+}
+
+cleanup_no_telemetry_state() {
+  is_no_telemetry_build || return 0
+  rm -rf "$MODPATH/config/telemetry" || return 1
+  rm -f /dev/netproxy/telemetry.lock.flock || return 1
+}
+
 #######################################
 # 参数: $1 快照目录。
 # 返回: 0=回退成功，1=回退失败（保留快照）。
@@ -329,6 +341,9 @@ copy_user_data_locked() {
         rm -rf "$snapshot/current/config/singbox/rules/remote" \
           && cp -a "$MODPATH/config/singbox/rules/remote" "$snapshot/current/config/singbox/rules/remote" \
           || { failed=true; break; }
+        if is_no_telemetry_build; then
+          rm -rf "$snapshot/current/config/telemetry" || { failed=true; break; }
+        fi
       fi
     fi
   done
@@ -394,8 +409,10 @@ with_user_data_locks() (
   flock -n 7 7>&7 || exit 1
   exec 6>"$LIVE_DIR/config/singbox/config.json.lock"
   flock -n 6 6>&6 || exit 1
-  exec 3>/dev/netproxy/telemetry.lock.flock
-  flock -n 3 3>&3 || exit 1
+  if ! is_no_telemetry_build; then
+    exec 3>/dev/netproxy/telemetry.lock.flock
+    flock -n 3 3>&3 || exit 1
+  fi
   local digest file
   digest="$(printf '%s\000root' "$LIVE_DIR/data/catalog" | sha256sum | cut -c1-16)"
   [ "${#digest}" -eq 16 ] || exit 1
@@ -413,7 +430,8 @@ with_user_data_locks() (
 # 返回: 0=当前事务已恢复且快照完成，1=失败。
 synchronize_user_data() {
   [ "$INSTALL_MODE" = fresh ] || "$LIVE_DIR/netproxyctl" catalog list >/dev/null 2>&1 || return 1
-  with_user_data_locks copy_user_data_locked
+  with_user_data_locks copy_user_data_locked || return 1
+  cleanup_no_telemetry_state
 }
 
 #######################################

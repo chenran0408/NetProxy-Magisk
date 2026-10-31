@@ -405,11 +405,15 @@ func BuildRuntime(ctx context.Context, options RuntimeOptions) (RuntimeResult, e
 		return RuntimeResult{}, errors.New("Catalog 元数据与 Provider 节点数量不一致")
 	}
 
-	if err := writeRuntimeProviders(options.ProvidersOutput, groups); err != nil {
+	chain, err := buildChainRuntime(ctx, groups)
+	if err != nil {
+		return RuntimeResult{}, err
+	}
+	if err := writeRuntimeProviders(options.ProvidersOutput, groups, chain); err != nil {
 		return RuntimeResult{}, err
 	}
 	activeTag, _ := selection.RuntimeTargets(runtimeTag)
-	if err := writeRuntimeOutbounds(options.OutboundsOutput, groups, activeTag); err != nil {
+	if err := writeRuntimeOutbounds(options.OutboundsOutput, groups, activeTag, chain); err != nil {
 		return RuntimeResult{}, err
 	}
 
@@ -505,8 +509,8 @@ func findGroup(groups []*loadedGroup, id string) int {
 	return -1
 }
 
-func writeRuntimeProviders(path string, groups []*loadedGroup) error {
-	items := make([]option.Provider, 0, len(groups))
+func writeRuntimeProviders(path string, groups []*loadedGroup, chain ...*chainRuntime) error {
+	items := make([]option.Provider, 0, len(groups)+1)
 	for _, group := range groups {
 		items = append(items, option.Provider{
 			Type: C.ProviderTypeLocal,
@@ -522,12 +526,21 @@ func writeRuntimeProviders(path string, groups []*loadedGroup) error {
 			},
 		})
 	}
+	if len(chain) > 0 && chain[0] != nil && len(chain[0].Landing) > 0 {
+		items = append(items, option.Provider{
+			Type: C.ProviderTypeInline,
+			Tag:  ChainLandingProviderTag,
+			Options: &option.ProviderInlineOptions{
+				Outbounds: chain[0].Landing,
+			},
+		})
+	}
 	return writeRuntimeJSONAtomic(path, struct {
 		Providers []option.Provider `json:"providers"`
 	}{Providers: items})
 }
 
-func writeRuntimeOutbounds(path string, groups []*loadedGroup, defaultTag string) error {
+func writeRuntimeOutbounds(path string, groups []*loadedGroup, defaultTag string, chain ...*chainRuntime) error {
 	outbounds := []option.Outbound{
 		{Type: C.TypeDirect, Tag: "direct", Options: new(option.DirectOutboundOptions)},
 		{Type: C.TypeBlock, Tag: "block", Options: new(option.StubOptions)},
@@ -558,6 +571,28 @@ func writeRuntimeOutbounds(path string, groups []*loadedGroup, defaultTag string
 			},
 		)
 		options = append(options, autoTag, selectTag)
+	}
+	if len(chain) > 0 && chain[0] != nil && len(chain[0].Landing) > 0 {
+		outbounds = append(outbounds,
+			option.Outbound{
+				Type: C.TypeSelector,
+				Tag:  ChainFrontTag,
+				Options: &option.SelectorOutboundOptions{
+					Providers:                 chain[0].FrontProviders,
+					InterruptExistConnections: true,
+				},
+			},
+			option.Outbound{
+				Type: C.TypeSelector,
+				Tag:  ChainOutboundTag,
+				Options: &option.SelectorOutboundOptions{
+					Providers:                 []string{ChainLandingProviderTag},
+					Default:                   ChainLandingProviderTag + "/" + chain[0].Landing[0].Tag,
+					InterruptExistConnections: true,
+				},
+			},
+		)
+		options = append(options, ChainOutboundTag)
 	}
 	outbounds = append(outbounds, option.Outbound{
 		Type: C.TypeSelector,
