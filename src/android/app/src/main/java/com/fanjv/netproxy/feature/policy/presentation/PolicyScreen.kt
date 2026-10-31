@@ -63,6 +63,8 @@ import com.fanjv.netproxy.feature.catalog.model.NodeDelayResult
 import com.fanjv.netproxy.feature.catalog.presentation.nodes.list.components.NodeCard
 import com.fanjv.netproxy.feature.policy.model.ChainProxyModel
 import com.fanjv.netproxy.feature.policy.model.PolicyModel
+import com.fanjv.netproxy.navigation.LocalNavigator
+import com.fanjv.netproxy.navigation.Route
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
@@ -93,6 +95,7 @@ internal fun PolicyScreen(
     viewModel: PolicyViewModel = netProxyViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val navigator = LocalNavigator.current
     val context = androidx.compose.ui.platform.LocalContext.current
     val displayPreferences = remember(context) {
         context.getSharedPreferences("node_display", Context.MODE_PRIVATE)
@@ -294,6 +297,7 @@ internal fun PolicyScreen(
                 sortMode = sortMode,
                 busy = state.busyId == pickerPolicy.id,
                 onGroupSelected = { pickerGroupId = it },
+                onManageGroups = { navigator.push(Route.SubscriptionManage) },
                 onSelect = { groupId, nodeTag, mode, region ->
                     viewModel.select(pickerPolicy, groupId, nodeTag, mode, region)
                     pickerPolicyId = null
@@ -329,7 +333,7 @@ private fun PolicyCard(
     onToggleExpanded: () -> Unit,
     onChooseNodes: () -> Unit,
     onOpenChain: () -> Unit,
-    onSelect: (PolicyModel, String, String, String) -> Unit,
+    onSelect: (PolicyModel, String, String, String, String) -> Unit,
     onTest: (PolicyModel) -> Unit
 ) {
     val group = policy.groups.firstOrNull { it.group.id == policy.groupId }
@@ -395,7 +399,15 @@ private fun PolicyCard(
                             modifier = Modifier.weight(1f),
                             enabled = !busy && (mode != "chain" || policy.chainAvailable),
                             colors = if (policy.mode == mode) ButtonDefaults.textButtonColorsPrimary() else ButtonDefaults.textButtonColors(),
-                            onClick = { onSelect(policy, policy.groupId, "", mode) }
+                            onClick = {
+                                onSelect(
+                                    policy,
+                                    policy.groupId,
+                                    "",
+                                    mode,
+                                    if (mode == "auto") policy.region else ""
+                                )
+                            }
                         )
                     }
                 }
@@ -452,7 +464,17 @@ private fun PolicyCard(
                             selectedIndex = policy.groups.indexOfFirst { it.group.id == policy.groupId }.coerceAtLeast(0),
                             onSelectedIndexChange = { index ->
                                 policy.groups.getOrNull(index)?.let { selected ->
-                                    onSelect(policy, selected.group.id, "", "auto")
+                                    val selectedNode = selected.nodes.firstOrNull { it.tag == policy.nodeTag }
+                                    val keepManual = policy.mode == "manual" && selectedNode != null
+                                    val keepRegion = policy.mode == "auto" && policy.region.isNotBlank() &&
+                                        selected.nodes.any { it.region == policy.region }
+                                    onSelect(
+                                        policy,
+                                        selected.group.id,
+                                        if (keepManual) policy.nodeTag else "",
+                                        if (keepManual || keepRegion) policy.mode else "auto",
+                                        if (keepRegion) policy.region else ""
+                                    )
                                 }
                             }
                         )
@@ -623,6 +645,7 @@ private fun PolicyNodePicker(
     sortMode: Int,
     busy: Boolean,
     onGroupSelected: (String) -> Unit,
+    onManageGroups: () -> Unit,
     onSelect: (String, String, String, String) -> Unit,
     onTest: () -> Unit
 ) {
@@ -712,6 +735,13 @@ private fun PolicyNodePicker(
                 onClick = onTest
             )
         }
+        TextButton(
+            text = stringResource(R.string.policy_manage_groups),
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.textButtonColorsPrimary(),
+            enabled = !busy,
+            onClick = onManageGroups
+        )
         if (busy) {
             PolicyTestingStatus()
         } else if (delay != null) {

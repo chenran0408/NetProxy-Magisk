@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"encoding/json/jsontext"
 	json "encoding/json/v2"
@@ -105,9 +106,24 @@ func eligibleLandingTags(document provider.Document) (map[string]struct{}, error
 		if _, supported := outbound.Options.(option.DialerOptionsWrapper); !supported {
 			return nil, fmt.Errorf("节点类型 %q 不支持链式前置", outbound.Type)
 		}
+		if !chainSelectableTag(outbound.Tag) {
+			continue
+		}
 		eligible[outbound.Tag] = struct{}{}
 	}
 	return eligible, nil
+}
+
+// Subscription providers may encode usage and expiry notices as pseudo-node
+// outbounds. They are useful metadata in the catalog but cannot be selected as
+// a real chain hop because they duplicate another node's connection settings.
+func chainSelectableTag(tag string) bool {
+	for _, marker := range []string{"剩余流量", "套餐到期", "距离下次重置"} {
+		if strings.Contains(tag, marker) {
+			return false
+		}
+	}
+	return strings.TrimSpace(tag) != ""
 }
 
 // chainLandingCopies 直接复制 Provider 原始 JSON 中的节点对象，只改写

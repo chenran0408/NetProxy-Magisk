@@ -84,10 +84,10 @@
     <string name="policy_test">测速</string>
     <string name="policy_testing">测速中…</string>
     <string name="policy_testing_status">正在测试节点，请稍候…</string>
-    <string name="policy_region_auto">地区自动</string>
+    <string name="policy_region_auto">优选此地区</string>
     <string name="policy_region_selected">已启用</string>
     <string name="policy_region_all">全部</string>
-    <string name="policy_global_auto">自动最快</string>
+    <string name="policy_global_auto">全部节点 · 自动测速</string>
     <string name="policy_global_auto_hint">在所有地区内自动选择最快节点</string>
     <string name="policy_region_auto_hint">仅在所选地区内自动选择最快节点</string>
     <string name="policy_all_nodes">地区内节点</string>
@@ -97,7 +97,8 @@
     <string name="policy_node_not_tested">未测速</string>
     <string name="policy_node_healthy">可用</string>
     <string name="policy_node_unhealthy">测速失败</string>
-    <string name="policy_group_picker">策略组</string>
+    <string name="policy_group_picker">节点组</string>
+    <string name="policy_manage_groups">管理节点组</string>
     <string name="policy_current_selection">当前选择</string>
     <string name="policy_choose_node">选择节点</string>
     <string name="policy_auto_in_group">自动 · %1$s</string>

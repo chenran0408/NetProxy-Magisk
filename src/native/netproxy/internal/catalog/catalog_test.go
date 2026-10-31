@@ -466,6 +466,25 @@ func TestChainProviderEligibilityRejectsEndpointsAndUnsupportedProtocols(t *test
 	}
 }
 
+func TestChainLandingSkipsSubscriptionMetadataPseudoNodes(t *testing.T) {
+	document := provider.Document{Outbounds: []option.Outbound{
+		{Type: C.TypeVLESS, Tag: "🇯🇵 日本东京", Options: new(option.VLESSOutboundOptions)},
+		{Type: C.TypeVLESS, Tag: "剩余流量：58 GB", Options: new(option.VLESSOutboundOptions)},
+		{Type: C.TypeVLESS, Tag: "套餐到期：2027-04-28", Options: new(option.VLESSOutboundOptions)},
+		{Type: C.TypeVLESS, Tag: "距离下次重置剩余：28 天", Options: new(option.VLESSOutboundOptions)},
+	}}
+	eligible, err := eligibleLandingTags(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(eligible) != 1 {
+		t.Fatalf("metadata pseudo-nodes must not be chain candidates: %#v", eligible)
+	}
+	if _, ok := eligible["🇯🇵 日本东京"]; !ok {
+		t.Fatalf("real node missing from chain candidates: %#v", eligible)
+	}
+}
+
 func TestTargetedScanDoesNotParseOtherProviders(t *testing.T) {
 	root := t.TempDir()
 	writeGroup(t, root, "default", "本地配置", "local", "LOCAL")

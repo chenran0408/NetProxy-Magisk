@@ -89,7 +89,8 @@
     <string name="policy_node_not_tested">Не проверен</string>
     <string name="policy_node_healthy">Доступен</string>
     <string name="policy_node_unhealthy">Проверка не пройдена</string>
-    <string name="policy_group_picker">Группа стратегии</string>
+    <string name="policy_group_picker">Группа узлов</string>
+    <string name="policy_manage_groups">Управление группами узлов</string>
     <string name="policy_current_selection">Текущий выбор</string>
     <string name="policy_choose_node">Выбрать узел</string>
     <string name="policy_auto_in_group">Авто · %1$s</string>
