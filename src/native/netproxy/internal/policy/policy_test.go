@@ -124,6 +124,9 @@ func TestBuildRuntimeProjectsAutoManualAndMissingNode(t *testing.T) {
 	if !strings.Contains(text, `"outbound":"Auto/本地配置"`) || !strings.Contains(text, `"outbound":"本地配置/Tokyo"`) {
 		t.Fatalf("runtime overlay omitted auto or manual target: %s", text)
 	}
+	if !strings.Contains(text, `"action":"hijack-dns"`) || strings.Index(text, `"action":"hijack-dns"`) > strings.Index(text, `"outbound":"Auto/本地配置"`) {
+		t.Fatalf("runtime overlay must hijack DNS before policy routes: %s", text)
+	}
 	if strings.Contains(text, "Removed") {
 		t.Fatalf("runtime overlay retained missing manual node: %s", text)
 	}

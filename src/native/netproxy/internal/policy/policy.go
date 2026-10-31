@@ -170,7 +170,20 @@ func BuildRuntime(ctx context.Context, path, catalogRoot string, policies []Poli
 	for _, group := range groups {
 		byID[group.Group.ID] = group
 	}
-	rules := make([]map[string]any, 0, len(policies))
+	// This overlay is loaded before the base route config. Handle DNS packets
+	// here first, otherwise a package_name policy can route the app's raw DNS
+	// connection through its selected proxy before the base hijack-dns rule.
+	rules := []map[string]any{
+		{
+			"type": "logical",
+			"mode": "or",
+			"rules": []map[string]any{
+				{"port": 53},
+				{"protocol": "dns"},
+			},
+			"action": "hijack-dns",
+		},
+	}
 	chainAvailable := false
 	if _, err := os.Stat(filepath.Join(filepath.Dir(path), "chain-landing.json")); err == nil {
 		chainAvailable = true
