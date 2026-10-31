@@ -3,11 +3,15 @@ package catalog
 import (
 	"context"
 	"fmt"
+	"os"
 
+	"encoding/json/jsontext"
+	json "encoding/json/v2"
+	"errors"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/option"
-	SJSON "github.com/sagernet/sing/common/json"
+	"path/filepath"
 )
 
 // These tags are intentionally stable: sing-box cache_file uses them to keep
@@ -44,11 +48,13 @@ func ChainProviderEligible(document provider.Document) bool {
 
 type chainRuntime struct {
 	FrontProviders []string
-	Landing        []option.Outbound
+	LandingPath    string
+	LandingTags    []string
 }
 
-func buildChainRuntime(ctx context.Context, groups []*loadedGroup) (*chainRuntime, error) {
+func buildChainRuntime(ctx context.Context, groups []*loadedGroup, landingOutput string) (*chainRuntime, error) {
 	result := &chainRuntime{}
+	copies := make([]map[string]jsontext.Value, 0)
 	for _, group := range groups {
 		document, err := provider.Load(ctx, group.ProviderPath)
 		if err != nil {
@@ -59,39 +65,94 @@ func buildChainRuntime(ctx context.Context, groups []*loadedGroup) (*chainRuntim
 		if !ChainProviderEligible(document) {
 			continue
 		}
-		result.FrontProviders = append(result.FrontProviders, group.RuntimeTag)
-		copies, err := assignChainProviderTags(ctx, document, group.RuntimeTag)
+		eligibleTags, err := eligibleLandingTags(document)
+		if err != nil {
+			return nil, err
+		}
+		groupCopies, err := chainLandingCopies(group.ProviderPath, group.RuntimeTag, eligibleTags)
 		if err != nil {
 			return nil, fmt.Errorf("生成分组 %s 的链式落地副本: %w", group.ID, err)
 		}
-		result.Landing = append(result.Landing, copies...)
+		if len(groupCopies) == 0 {
+			continue
+		}
+		result.FrontProviders = append(result.FrontProviders, group.RuntimeTag)
+		copies = append(copies, groupCopies...)
 	}
-	if len(result.Landing) == 0 {
+	if len(copies) == 0 {
 		return nil, nil
+	}
+	if err := writeChainLandingFile(landingOutput, copies); err != nil {
+		return nil, err
+	}
+	result.LandingPath = landingOutput
+	for _, copyEntry := range copies {
+		var tag string
+		if err := json.Unmarshal(copyEntry["tag"], &tag); err != nil {
+			return nil, fmt.Errorf("读取链式落地副本标签: %w", err)
+		}
+		result.LandingTags = append(result.LandingTags, tag)
 	}
 	return result, nil
 }
 
-func assignChainProviderTags(ctx context.Context, document provider.Document, runtimeTag string) ([]option.Outbound, error) {
-	result := make([]option.Outbound, 0, len(document.Outbounds))
-	for _, original := range document.Outbounds {
-		content, err := SJSON.MarshalContext(provider.Context(ctx), original)
+func eligibleLandingTags(document provider.Document) (map[string]struct{}, error) {
+	eligible := make(map[string]struct{}, len(document.Outbounds))
+	for _, outbound := range document.Outbounds {
+		if _, supported := chainLandingTypes[outbound.Type]; !supported {
+			return nil, fmt.Errorf("节点类型 %q 不支持链式前置", outbound.Type)
+		}
+		if _, supported := outbound.Options.(option.DialerOptionsWrapper); !supported {
+			return nil, fmt.Errorf("节点类型 %q 不支持链式前置", outbound.Type)
+		}
+		eligible[outbound.Tag] = struct{}{}
+	}
+	return eligible, nil
+}
+
+// chainLandingCopies 直接复制 Provider 原始 JSON 中的节点对象，只改写
+// tag 并追加 detour；不能经过 option 结构体序列化，否则会丢失协议字段。
+func chainLandingCopies(providerPath, runtimeTag string, eligible map[string]struct{}) ([]map[string]jsontext.Value, error) {
+	content, err := os.ReadFile(providerPath)
+	if err != nil {
+		return nil, err
+	}
+	var document struct {
+		Outbounds []map[string]jsontext.Value `json:"outbounds"`
+	}
+	if err := json.Unmarshal(content, &document); err != nil {
+		return nil, err
+	}
+	copies := make([]map[string]jsontext.Value, 0, len(document.Outbounds))
+	for _, outbound := range document.Outbounds {
+		var originalTag string
+		if value, exists := outbound["tag"]; !exists || json.Unmarshal(value, &originalTag) != nil || originalTag == "" {
+			return nil, errors.New("节点缺少有效 tag，无法生成链式落地副本")
+		}
+		if _, ok := eligible[originalTag]; !ok {
+			continue
+		}
+		tagValue, err := json.Marshal(runtimeTag + "/" + originalTag)
 		if err != nil {
 			return nil, err
 		}
-		var copy option.Outbound
-		if err := SJSON.UnmarshalContext(provider.Context(ctx), content, &copy); err != nil {
+		outbound["tag"] = tagValue
+		detourValue, err := json.Marshal(ChainFrontTag)
+		if err != nil {
 			return nil, err
 		}
-		copy.Tag = runtimeTag + "/" + original.Tag
-		dialer, ok := copy.Options.(option.DialerOptionsWrapper)
-		if !ok {
-			return nil, fmt.Errorf("节点类型 %q 不支持链式前置", original.Type)
-		}
-		options := dialer.TakeDialerOptions()
-		options.Detour = ChainFrontTag
-		dialer.ReplaceDialerOptions(options)
-		result = append(result, copy)
+		outbound["detour"] = detourValue
+		copies = append(copies, outbound)
 	}
-	return result, nil
+	return copies, nil
+}
+
+func writeChainLandingFile(path string, outbounds []map[string]jsontext.Value) error {
+	return writeJSONAtomic(path, struct {
+		Outbounds []map[string]jsontext.Value `json:"outbounds"`
+	}{Outbounds: outbounds})
+}
+
+func chainLandingOutputPath(providersOutput string) string {
+	return filepath.Join(filepath.Dir(providersOutput), "chain-landing.json")
 }

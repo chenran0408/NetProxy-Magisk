@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -344,22 +345,111 @@ func TestBuildRuntimeAddsEphemeralChainCopies(t *testing.T) {
 		t.Fatal(err)
 	}
 	providers := readFile(t, filepath.Join(runtimeDir, "providers.json"))
+	landing := readFile(t, filepath.Join(runtimeDir, "chain-landing.json"))
 	outbounds := readFile(t, filepath.Join(runtimeDir, "outbounds.json"))
 	for _, expected := range []string{
-		`"type": "inline"`, `"tag": "链式落地"`, `"tag": "前置订阅/香港"`,
-		`"detour": "链式前置"`,
+		`"type": "local"`, `"tag": "链式落地"`, `chain-landing.json`,
 	} {
 		if !strings.Contains(providers, expected) {
 			t.Fatalf("chain provider missing %s: %s", expected, providers)
 		}
 	}
-	for _, expected := range []string{`"tag": "链式前置"`, `"tag": "链式代理"`, `"default": "链式落地/前置订阅/香港"`, `"outbounds": [`} {
+	for _, expected := range []string{
+		`"tag": "前置订阅/香港"`, `"detour": "链式前置"`, `"server_port": 1080`,
+	} {
+		if !strings.Contains(landing, expected) {
+			t.Fatalf("chain landing missing %s: %s", expected, landing)
+		}
+	}
+	// sing-box 的 selector 启动阶段不解析 provider 节点，default 不能指向
+	// 链式落地副本；落地选择由用户在面板选择后经 cache_file 持久化。
+	for _, expected := range []string{`"tag": "链式前置"`, `"tag": "链式代理"`, `"outbounds": [`} {
 		if !strings.Contains(outbounds, expected) {
 			t.Fatalf("chain outbound missing %s: %s", expected, outbounds)
 		}
 	}
+	if strings.Contains(outbounds, `"default": "链式落地/`) {
+		t.Fatalf("chain landing selector must not default to a provider node: %s", outbounds)
+	}
 	if got := readFile(t, filepath.Join(root, "landing", "provider.json")); got != userProvider {
 		t.Fatal("chain generation modified the persisted provider")
+	}
+}
+
+func TestChainLandingCopiesPreserveRawFields(t *testing.T) {
+	root := t.TempDir()
+	directory := filepath.Join(root, "default")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	providerDocument := `{"outbounds":[{"type":"shadowsocks","tag":"加密节点","server":"example.com","server_port":8388,` +
+		`"method":"aes-128-gcm","password":"secret","plugin":"obfs-local","plugin_opts":"obfs=http;obfs-host=example.com"}]}`
+	if err := os.WriteFile(filepath.Join(directory, "provider.json"), []byte(providerDocument), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	metadata, err := json.Marshal(map[string]any{
+		"id": "default", "name": "落地订阅", "type": "subscription", "revision": 1,
+		"node_count": 1, "update_interval": 86400, "update_via_proxy": "auto",
+	}, json.Deterministic(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "meta.json"), metadata, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runtimeDir := t.TempDir()
+	if _, err := BuildRuntime(t.Context(), RuntimeOptions{
+		Root: root, ProvidersOutput: filepath.Join(runtimeDir, "providers.json"),
+		OutboundsOutput: filepath.Join(runtimeDir, "outbounds.json"),
+		Selection:       moduleconfig.Selection{ActiveGroupID: "default"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	landing := readFile(t, filepath.Join(runtimeDir, "chain-landing.json"))
+	for _, expected := range []string{
+		`"method": "aes-128-gcm"`, `"password": "secret"`,
+		`"plugin_opts": "obfs=http;obfs-host=example.com"`, `"tag": "落地订阅/加密节点"`,
+	} {
+		if !strings.Contains(landing, expected) {
+			t.Fatalf("chain landing lost raw field %s: %s", expected, landing)
+		}
+	}
+}
+
+func TestBuildRuntimeWithoutEligibleProvidersRemovesLandingFile(t *testing.T) {
+	root := t.TempDir()
+	directory := filepath.Join(root, "default")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	providerDocument := `{"outbounds":[{"type":"ssh","tag":"ssh节点","server":"example.com","server_port":22,"user":"root"}]}`
+	if err := os.WriteFile(filepath.Join(directory, "provider.json"), []byte(providerDocument), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	metadata, err := json.Marshal(map[string]any{
+		"id": "default", "name": "本地配置", "type": "local", "revision": 1,
+		"node_count": 1, "update_interval": 86400, "update_via_proxy": "auto",
+	}, json.Deterministic(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "meta.json"), metadata, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runtimeDir := t.TempDir()
+	landingPath := filepath.Join(runtimeDir, "chain-landing.json")
+	if err := os.WriteFile(landingPath, []byte("stale"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := BuildRuntime(t.Context(), RuntimeOptions{
+		Root: root, ProvidersOutput: filepath.Join(runtimeDir, "providers.json"),
+		OutboundsOutput: filepath.Join(runtimeDir, "outbounds.json"),
+		Selection:       moduleconfig.Selection{ActiveGroupID: "default"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(landingPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("stale chain landing file should be removed")
 	}
 }
 

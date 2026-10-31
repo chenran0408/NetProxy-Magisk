@@ -141,6 +141,14 @@ check_install_order() {
   ! printf '%s\n' "$main_flow" | grep -q 'stop_proxy_if_running'
 }
 
+#######################################
+# 确认未导出 TMPDIR 的管理器也能创建安装临时目录
+#######################################
+check_installer_tmpdir() {
+  grep -q '^TMPDIR="${TMPDIR:-/data/local/tmp}"$' "$MODULE_DIR/customize.sh" \
+    && grep -q '^export TMPDIR$' "$MODULE_DIR/customize.sh"
+}
+
 check_shell_syntax
 check_service_bridge
 check_action_bridge
@@ -152,4 +160,5 @@ check_module_layout
 check_worker_lifecycle
 check_install_choices
 check_install_order
+check_installer_tmpdir
 printf '%s\n' 'module scripts test passed'

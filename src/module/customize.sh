@@ -556,6 +556,9 @@ if [ "$BACKGROUND" = true ]; then
   exit 0
 fi
 
+# SukiSU/KernelSU 命令行安装环境可能不导出 TMPDIR；只读根目录会让 mktemp 直接失败。
+TMPDIR="${TMPDIR:-/data/local/tmp}"
+export TMPDIR
 INSTALL_TMP="$(mktemp -d "$TMPDIR/netproxy-install.XXXXXX")" || exit 1
 trap finish_install EXIT
 trap 'exit 1' HUP INT TERM

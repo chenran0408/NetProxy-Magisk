@@ -405,9 +405,13 @@ func BuildRuntime(ctx context.Context, options RuntimeOptions) (RuntimeResult, e
 		return RuntimeResult{}, errors.New("Catalog 元数据与 Provider 节点数量不一致")
 	}
 
-	chain, err := buildChainRuntime(ctx, groups)
+	landingOutput := chainLandingOutputPath(options.ProvidersOutput)
+	chain, err := buildChainRuntime(ctx, groups, landingOutput)
 	if err != nil {
 		return RuntimeResult{}, err
+	}
+	if chain == nil {
+		_ = os.Remove(landingOutput)
 	}
 	if err := writeRuntimeProviders(options.ProvidersOutput, groups, chain); err != nil {
 		return RuntimeResult{}, err
@@ -526,12 +530,12 @@ func writeRuntimeProviders(path string, groups []*loadedGroup, chain ...*chainRu
 			},
 		})
 	}
-	if len(chain) > 0 && chain[0] != nil && len(chain[0].Landing) > 0 {
+	if len(chain) > 0 && chain[0] != nil && len(chain[0].LandingTags) > 0 {
 		items = append(items, option.Provider{
-			Type: C.ProviderTypeInline,
+			Type: C.ProviderTypeLocal,
 			Tag:  ChainLandingProviderTag,
-			Options: &option.ProviderInlineOptions{
-				Outbounds: chain[0].Landing,
+			Options: &option.ProviderLocalOptions{
+				Path: chain[0].LandingPath,
 			},
 		})
 	}
@@ -572,7 +576,7 @@ func writeRuntimeOutbounds(path string, groups []*loadedGroup, defaultTag string
 		)
 		options = append(options, autoTag, selectTag)
 	}
-	if len(chain) > 0 && chain[0] != nil && len(chain[0].Landing) > 0 {
+	if len(chain) > 0 && chain[0] != nil && len(chain[0].LandingTags) > 0 {
 		outbounds = append(outbounds,
 			option.Outbound{
 				Type: C.TypeSelector,
@@ -587,7 +591,6 @@ func writeRuntimeOutbounds(path string, groups []*loadedGroup, defaultTag string
 				Tag:  ChainOutboundTag,
 				Options: &option.SelectorOutboundOptions{
 					Providers:                 []string{ChainLandingProviderTag},
-					Default:                   ChainLandingProviderTag + "/" + chain[0].Landing[0].Tag,
 					InterruptExistConnections: true,
 				},
 			},
