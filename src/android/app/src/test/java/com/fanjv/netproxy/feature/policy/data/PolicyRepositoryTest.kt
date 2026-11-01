@@ -5,11 +5,53 @@ import com.fanjv.netproxy.core.api.TestApiTransport
 import com.fanjv.netproxy.core.api.apiSuccess
 import com.fanjv.netproxy.feature.policy.model.PolicyModel
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PolicyRepositoryTest {
+    @Test fun createsPackageOnlyPolicyFollowingProxyWithoutLocalNodes() = runBlocking {
+        val repository = PolicyRepository(ModuleApiClient(TestApiTransport { request ->
+            assertEquals("POST", request.method)
+            assertEquals("/policies", request.path)
+            assertEquals("hills", request.text("name"))
+            assertEquals("proxy", request.text("mode"))
+            assertFalse(request.body.containsKey("group_id"))
+            assertEquals(listOf("com.mountains.hills"), request.body.getValue("package_names").jsonArray.map { it.jsonPrimitive.content })
+            assertTrue(request.body.getValue("domain_suffixes").jsonArray.isEmpty())
+            assertTrue(request.body.getValue("ports").jsonArray.isEmpty())
+            apiSuccess("""{"policy":{"id":"custom-hills","name":"hills","mode":"proxy","package_names":["com.mountains.hills"]},"persisted":true,"runtime_synced":false}""")
+        }))
+
+        val saved = repository.create("hills", listOf("com.mountains.hills"), emptyList(), emptyList())
+        assertEquals("custom-hills", saved.id)
+        assertEquals("proxy", saved.mode)
+        assertEquals(listOf("com.mountains.hills"), saved.packageNames)
+        assertTrue(saved.persisted)
+        assertFalse(saved.runtimeSynced)
+    }
+
+    @Test fun editingDefinitionReturnsSavedPolicyAndKeepsTarget() = runBlocking {
+        val repository = PolicyRepository(ModuleApiClient(TestApiTransport { request ->
+            assertEquals("PUT", request.method)
+            assertEquals("/policies/custom-hills", request.path)
+            assertEquals("subscription-id", request.text("group_id"))
+            assertEquals("auto", request.text("mode"))
+            assertEquals("jp", request.text("region"))
+            apiSuccess("""{"policy":{"id":"custom-hills","name":"hills edited","mode":"auto","group_id":"subscription-id","region":"jp"},"persisted":true,"runtime_synced":true}""")
+        }))
+        val saved = repository.updateDefinition(
+            PolicyModel("custom-hills", "hills", groupId = "subscription-id", mode = "auto", region = "jp"),
+            "hills edited", listOf("com.mountains.hills"), emptyList(), emptyList(),
+        )
+        assertEquals("hills edited", saved.name)
+        assertEquals("jp", saved.region)
+        assertTrue(saved.runtimeSynced)
+    }
+
     @Test fun listDecodesPolicyGroupsAndSaveUsesStableContract() = runBlocking {
         val calls = mutableListOf<String>()
         val client = ModuleApiClient(TestApiTransport { request ->

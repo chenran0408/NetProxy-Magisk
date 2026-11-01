@@ -159,7 +159,7 @@ func (s *Server) addPolicy(ctx context.Context, r *http.Request) (contract.Resul
 		RuntimeTag:     "Proxy",
 	}
 	if item.Mode == "" {
-		item.Mode = "auto"
+		item.Mode = "proxy"
 	}
 	if item.GroupID == "" {
 		item.GroupID = "default"

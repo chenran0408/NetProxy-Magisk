@@ -4,6 +4,7 @@ import com.fanjv.netproxy.core.api.ModuleApiClient
 import com.fanjv.netproxy.feature.policy.model.ChainProxyModel
 import com.fanjv.netproxy.feature.policy.model.PolicyModel
 import com.fanjv.netproxy.feature.policy.model.PolicyResponse
+import com.fanjv.netproxy.feature.policy.model.PolicySaveResponse
 import com.fanjv.netproxy.feature.catalog.model.NodeDelayResult
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
@@ -28,16 +29,16 @@ internal class PolicyRepository(private val client: ModuleApiClient) {
         })
     }
 
-    suspend fun create(name: String, packages: List<String>, domains: List<String>, ports: List<Int>) {
+    suspend fun create(name: String, packages: List<String>, domains: List<String>, ports: List<Int>): PolicyModel =
         client.post("/policies", buildJsonObject {
             put("name", name)
+            put("mode", "proxy")
             putJsonArray("package_names") { packages.forEach(::add) }
             putJsonArray("domain_suffixes") { domains.forEach(::add) }
             putJsonArray("ports") { ports.forEach(::add) }
-        })
-    }
+        }).data.let { client.json.decodeFromJsonElement<PolicySaveResponse>(it).savedPolicy() }
 
-    suspend fun updateDefinition(policy: PolicyModel, name: String, packages: List<String>, domains: List<String>, ports: List<Int>) {
+    suspend fun updateDefinition(policy: PolicyModel, name: String, packages: List<String>, domains: List<String>, ports: List<Int>): PolicyModel =
         client.put("/policies/${policy.id}", buildJsonObject {
             put("name", name)
             putJsonArray("package_names") { packages.forEach(::add) }
@@ -47,8 +48,7 @@ internal class PolicyRepository(private val client: ModuleApiClient) {
             put("node_tag", policy.nodeTag)
             put("mode", policy.mode)
             put("region", policy.region)
-        })
-    }
+        }).data.let { client.json.decodeFromJsonElement<PolicySaveResponse>(it).savedPolicy() }
 
     suspend fun delete(id: String) {
         client.delete("/policies/$id")

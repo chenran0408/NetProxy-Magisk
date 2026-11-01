@@ -105,6 +105,9 @@
     <string name="policy_collapse">Свернуть стратегию</string>
     <string name="policy_add_custom">Добавить стратегию</string>
     <string name="policy_save_custom">Сохранить стратегию</string>
+    <string name="policy_saving">Сохранение…</string>
+    <string name="policy_custom_saved">Стратегия сохранена</string>
+    <string name="policy_custom_default_route">Новая стратегия использует Proxy. После сохранения можно выбрать регион или узел.</string>
     <string name="policy_edit_custom">Изменить стратегию</string>
     <string name="policy_delete_custom">Удалить стратегию</string>
     <string name="policy_custom_name">Название стратегии</string>

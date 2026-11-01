@@ -2,6 +2,7 @@ package com.fanjv.netproxy.feature.policy.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.fanjv.netproxy.core.api.ModuleApiException
 import com.fanjv.netproxy.feature.policy.data.PolicyRepository
 import com.fanjv.netproxy.feature.policy.model.ChainProxyModel
 import com.fanjv.netproxy.feature.policy.model.PolicyModel
@@ -11,6 +12,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 internal data class PolicyUiState(
@@ -20,6 +22,9 @@ internal data class PolicyUiState(
     val busyId: String = "",
     val delays: Map<String, NodeDelayResult> = emptyMap(),
     val chain: ChainProxyModel = ChainProxyModel(),
+    val customSaveCompleted: Boolean = false,
+    val savedCustomPolicyId: String? = null,
+    val customSaveError: String = "",
 )
 
 internal class PolicyViewModel(private val repository: PolicyRepository) : ViewModel() {
@@ -51,13 +56,19 @@ internal class PolicyViewModel(private val repository: PolicyRepository) : ViewM
         if (force) refreshJob?.cancel()
         if (!silent) _state.update { it.copy(loading = true, error = "") }
         refreshJob = viewModelScope.launch {
-            runCatching { repository.list() }.onSuccess { list ->
+            try {
+                val list = repository.list()
                 loaded = true
-                val chain = runCatching { repository.chain() }.getOrNull() ?: _state.value.chain
+                val chain = try { repository.chain() }
+                    catch (error: CancellationException) { throw error }
+                    catch (_: Exception) { _state.value.chain }
                 // Keep completed test results visible when the policy list refreshes.
-                _state.value = _state.value.copy(policies = list, chain = chain, loading = false, error = "", busyId = "")
+                _state.update { it.copy(policies = list, chain = chain, loading = false, busyId = "") }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                _state.update { it.copy(loading = false, busyId = "", error = error.message.orEmpty()) }
             }
-                .onFailure { error -> _state.update { it.copy(loading = false, busyId = "", error = error.message.orEmpty()) } }
         }
     }
 
@@ -79,23 +90,60 @@ internal class PolicyViewModel(private val repository: PolicyRepository) : ViewM
         }
     }
 
-    fun createCustom(name: String, packages: List<String>, domains: List<String>, ports: List<Int>) {
+    fun beginCustomEdit() {
         if (_state.value.busyId.isNotBlank()) return
-        _state.update { it.copy(busyId = CUSTOM_BUSY_ID, error = "") }
-        viewModelScope.launch {
-            runCatching { repository.create(name, packages, domains, ports) }
-                .onSuccess { refresh(force = true) }
-                .onFailure { error -> _state.update { it.copy(error = error.message.orEmpty(), busyId = "") } }
-        }
+        _state.update { it.copy(customSaveCompleted = false, savedCustomPolicyId = null, customSaveError = "") }
     }
 
-    fun updateCustom(policy: PolicyModel, name: String, packages: List<String>, domains: List<String>, ports: List<Int>) {
+    fun createCustom(name: String, packages: List<String>, domains: List<String>, ports: List<Int>) =
+        saveCustom { repository.create(name, packages, domains, ports) }
+
+    fun updateCustom(policy: PolicyModel, name: String, packages: List<String>, domains: List<String>, ports: List<Int>) =
+        saveCustom { repository.updateDefinition(policy, name, packages, domains, ports) }
+
+    private fun saveCustom(save: suspend () -> PolicyModel) {
         if (_state.value.busyId.isNotBlank()) return
-        _state.update { it.copy(busyId = CUSTOM_BUSY_ID, error = "") }
+        refreshJob?.cancel()
+        _state.update { it.copy(busyId = CUSTOM_BUSY_ID, loading = false, error = "",
+            customSaveCompleted = false, savedCustomPolicyId = null, customSaveError = "") }
         viewModelScope.launch {
-            runCatching { repository.updateDefinition(policy, name, packages, domains, ports) }
-                .onSuccess { refresh(force = true) }
-                .onFailure { error -> _state.update { it.copy(error = error.message.orEmpty(), busyId = "") } }
+            var warning = ""
+            val saved = try {
+                save()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (error !is ModuleApiException || !error.persisted) {
+                    _state.update { it.copy(busyId = "", error = error.message.orEmpty(), customSaveError = error.message.orEmpty()) }
+                    return@launch
+                }
+                // The write committed even though the runtime reload failed. Do not invite a duplicate POST.
+                warning = error.message.orEmpty()
+                null
+            }
+            if (saved != null) {
+                _state.update { state ->
+                    val previous = state.policies.firstOrNull { it.id == saved.id }
+                    val policy = saved.copy(
+                        groups = previous?.groups ?: state.policies.firstOrNull()?.groups.orEmpty(),
+                        chainAvailable = state.chain.available,
+                    )
+                    state.copy(policies = if (previous == null) state.policies + policy
+                        else state.policies.map { if (it.id == policy.id) policy else it },
+                        delays = state.delays - policy.id)
+                }
+            }
+            try {
+                val list = repository.list()
+                loaded = true
+                _state.update { it.copy(policies = list) }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                // A failed reread must not remove the card confirmed by the save response.
+                warning = listOf(warning, error.message.orEmpty()).filter(String::isNotBlank).joinToString("\n")
+            }
+            _state.update { it.copy(busyId = "", error = warning, customSaveCompleted = true, savedCustomPolicyId = saved?.id) }
         }
     }
 

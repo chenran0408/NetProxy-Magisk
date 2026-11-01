@@ -113,6 +113,9 @@
     <string name="policy_collapse">收起策略</string>
     <string name="policy_add_custom">新增策略</string>
     <string name="policy_save_custom">保存策略</string>
+    <string name="policy_saving">保存中…</string>
+    <string name="policy_custom_saved">策略已保存</string>
+    <string name="policy_custom_default_route">新策略默认跟随 Proxy，保存后可选择地区或节点。</string>
     <string name="policy_edit_custom">编辑策略</string>
     <string name="policy_delete_custom">删除策略</string>
     <string name="policy_custom_name">策略名称</string>

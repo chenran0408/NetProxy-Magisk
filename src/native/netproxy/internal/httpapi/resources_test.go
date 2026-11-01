@@ -19,6 +19,7 @@ import (
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/contract"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/module"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/policy"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
 )
 
@@ -257,6 +258,52 @@ func TestResourcesCustomPolicyCrud(t *testing.T) {
 	response, result := resourceRequest(t, server, "DELETE", "/api/v1/policies/ai", "")
 	if response.Code != http.StatusBadRequest || result.Code != "usage.invalid" {
 		t.Fatalf("built-in policy deletion should be rejected: %s", response.Body.String())
+	}
+}
+
+func TestResourcesCreatePackageOnlyPolicyWithEmptyLocalGroup(t *testing.T) {
+	server := resourceFixture(t)
+	resourceWriteFile(t, filepath.Join(server.options.CatalogRoot, "default", "provider.json"), `{"outbounds":[]}`)
+	body := `{"name":"hills","package_names":["com.mountains.hills"],"domain_suffixes":[],"ports":[]}`
+
+	var created struct {
+		Policy        policy.Policy `json:"policy"`
+		Persisted     bool          `json:"persisted"`
+		RuntimeSynced bool          `json:"runtime_synced"`
+	}
+	resourceAssertSuccess(t, server, "POST", "/api/v1/policies", body, "policy.created", &created)
+	if !created.Persisted || created.RuntimeSynced || created.Policy.Mode != "proxy" || created.Policy.Name != "hills" {
+		t.Fatalf("package-only policy creation failed: %+v", created)
+	}
+	stored, err := policy.Load(t.Context(), server.policyPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, found := policy.Find(stored, created.Policy.ID)
+	if !found || len(item.PackageNames) != 1 || item.PackageNames[0] != "com.mountains.hills" {
+		t.Fatalf("package-only policy was not persisted: %+v", stored)
+	}
+	var listed struct {
+		Policies []policyView `json:"policies"`
+	}
+	resourceAssertSuccess(t, server, "GET", "/api/v1/policies", "", "policy.list", &listed)
+	for _, item := range listed.Policies {
+		if item.ID == created.Policy.ID && item.Name == "hills" && item.Persisted {
+			return
+		}
+	}
+	t.Fatalf("new policy disappeared from the policy list: %+v", listed)
+}
+
+func TestResourcesCreateExplicitAutoPolicyStillRequiresNodes(t *testing.T) {
+	server := resourceFixture(t)
+	resourceWriteFile(t, filepath.Join(server.options.CatalogRoot, "default", "provider.json"), `{"outbounds":[]}`)
+	response, _ := resourceRequest(t, server, "POST", "/api/v1/policies", `{"name":"hills","package_names":["com.mountains.hills"],"mode":"auto","group_id":"default"}`)
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "策略分组没有可用节点") {
+		t.Fatalf("explicit empty auto target must be rejected: %s", response.Body.String())
+	}
+	if _, err := os.Stat(server.policyPath()); !os.IsNotExist(err) {
+		t.Fatalf("rejected policy must not be written: %v", err)
 	}
 }
 

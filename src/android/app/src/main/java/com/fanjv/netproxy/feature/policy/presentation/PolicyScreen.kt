@@ -1,6 +1,7 @@
 package com.fanjv.netproxy.feature.policy.presentation
 
 import android.content.Context
+import android.widget.Toast
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -20,6 +21,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -35,6 +37,7 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SmartToy
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -107,6 +110,7 @@ internal fun PolicyScreen(
     var deletePolicyId by remember { mutableStateOf<String?>(null) }
     var pickerPolicyId by remember { mutableStateOf<String?>(null) }
     var pickerGroupId by remember { mutableStateOf("") }
+    val listState = rememberLazyListState()
     var expandedPolicies by remember {
         mutableStateOf(displayPreferences.getStringSet("expanded_policies", emptySet()).orEmpty())
     }
@@ -140,6 +144,23 @@ internal fun PolicyScreen(
         onPauseOrDispose { if (isActive) viewModel.setVisible(false) }
     }
 
+    val savedMessage = stringResource(R.string.policy_custom_saved)
+    LaunchedEffect(state.customSaveCompleted) {
+        if (state.customSaveCompleted && policyEditorId != null) {
+            policyEditorId = null
+            Toast.makeText(context, state.error.ifBlank { savedMessage }, if (state.error.isBlank()) Toast.LENGTH_SHORT else Toast.LENGTH_LONG).show()
+            val index = state.policies.indexOfFirst { it.id == state.savedCustomPolicyId }
+            if (index >= 0) listState.animateScrollToItem(index + if (state.error.isNotBlank()) 1 else 0)
+            else if (state.error.isNotBlank()) listState.animateScrollToItem(0)
+        }
+    }
+
+    fun openCustomEditor(id: String) {
+        if (state.busyId.isNotBlank()) return
+        viewModel.beginCustomEdit()
+        policyEditorId = id
+    }
+
     fun togglePolicy(policyId: String) {
         val next = if (policyId in expandedPolicies) expandedPolicies - policyId else expandedPolicies + policyId
         expandedPolicies = next
@@ -162,7 +183,7 @@ internal fun PolicyScreen(
                         actions = listOf(
                             TopBarMenuAction(
                                 text = stringResource(R.string.policy_add_custom),
-                                onClick = { policyEditorId = "" }
+                                onClick = { openCustomEditor("") }
                             ),
                             TopBarMenuAction(
                                 text = stringResource(R.string.node_display_settings),
@@ -196,6 +217,7 @@ internal fun PolicyScreen(
                 ) {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
+                        state = listState,
                         contentPadding = PaddingValues(
                             start = 12.dp,
                             // Keep the first card below the large top-app-bar title.
@@ -221,7 +243,7 @@ internal fun PolicyScreen(
                                     pickerGroupId = policy.groupId
                                 },
                                 onOpenChain = { showChainSheet = true },
-                                onEditCustom = { policyEditorId = policy.id },
+                                onEditCustom = { openCustomEditor(policy.id) },
                                 onDeleteCustom = { deletePolicyId = policy.id },
                                 onSelect = viewModel::select,
                                 onTest = viewModel::test
@@ -331,16 +353,16 @@ internal fun PolicyScreen(
     OverlayBottomSheet(
         show = policyEditorId != null,
         title = stringResource(if (editorPolicy == null) R.string.policy_add_custom else R.string.policy_edit_custom),
-        onDismissRequest = { policyEditorId = null }
+        onDismissRequest = { if (state.busyId != CUSTOM_BUSY_ID) policyEditorId = null }
     ) {
-        CustomPolicyEditor(
+        if (policyEditorId != null) CustomPolicyEditor(
             policy = editorPolicy,
             busy = state.busyId == CUSTOM_BUSY_ID,
+            error = state.customSaveError,
             onDismiss = { policyEditorId = null },
             onSave = { name, packages, domains, ports ->
                 if (editorPolicy == null) viewModel.createCustom(name, packages, domains, ports)
                 else viewModel.updateCustom(editorPolicy, name, packages, domains, ports)
-                policyEditorId = null
             }
         )
     }
@@ -707,6 +729,7 @@ private fun ChainSlotCard(title: String, value: String, enabled: Boolean, onClic
 private fun CustomPolicyEditor(
     policy: PolicyModel?,
     busy: Boolean,
+    error: String,
     onDismiss: () -> Unit,
     onSave: (String, List<String>, List<String>, List<Int>) -> Unit,
 ) {
@@ -729,6 +752,7 @@ private fun CustomPolicyEditor(
             value = name,
             onValueChange = { name = it },
             label = stringResource(R.string.policy_custom_name),
+            enabled = !busy,
             maxLines = 1,
             modifier = Modifier.fillMaxWidth()
         )
@@ -736,6 +760,7 @@ private fun CustomPolicyEditor(
             value = packages,
             onValueChange = { packages = it },
             label = stringResource(R.string.policy_custom_packages),
+            enabled = !busy,
             maxLines = 3,
             modifier = Modifier.fillMaxWidth()
         )
@@ -743,6 +768,7 @@ private fun CustomPolicyEditor(
             value = domains,
             onValueChange = { domains = it },
             label = stringResource(R.string.policy_custom_domains),
+            enabled = !busy,
             maxLines = 3,
             modifier = Modifier.fillMaxWidth()
         )
@@ -750,6 +776,7 @@ private fun CustomPolicyEditor(
             value = ports,
             onValueChange = { ports = it },
             label = stringResource(R.string.policy_custom_ports),
+            enabled = !busy,
             maxLines = 1,
             modifier = Modifier.fillMaxWidth()
         )
@@ -765,10 +792,16 @@ private fun CustomPolicyEditor(
             fontSize = 12.sp,
             color = colorScheme.onSurfaceVariantSummary
         )
+        if (policy == null) Text(
+            text = stringResource(R.string.policy_custom_default_route),
+            fontSize = 12.sp,
+            color = colorScheme.onSurfaceVariantSummary
+        )
+        if (error.isNotBlank()) Text(text = error, color = colorScheme.error, fontSize = 13.sp)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            TextButton(stringResource(android.R.string.cancel), modifier = Modifier.weight(1f), onClick = onDismiss)
+            TextButton(stringResource(android.R.string.cancel), modifier = Modifier.weight(1f), enabled = !busy, onClick = onDismiss)
             TextButton(
-                stringResource(if (busy) R.string.policy_testing else R.string.policy_save_custom),
+                stringResource(if (busy) R.string.policy_saving else R.string.policy_save_custom),
                 modifier = Modifier.weight(1f),
                 enabled = !busy && name.isNotBlank() && hasMatch && !hasInvalidPort,
                 colors = ButtonDefaults.textButtonColorsPrimary(),

@@ -105,6 +105,9 @@
     <string name="policy_collapse">Collapse policy</string>
     <string name="policy_add_custom">Add policy</string>
     <string name="policy_save_custom">Save policy</string>
+    <string name="policy_saving">Saving…</string>
+    <string name="policy_custom_saved">Policy saved</string>
+    <string name="policy_custom_default_route">New policies follow Proxy. Choose a region or node after saving.</string>
     <string name="policy_edit_custom">Edit policy</string>
     <string name="policy_delete_custom">Delete policy</string>
     <string name="policy_custom_name">Policy name</string>

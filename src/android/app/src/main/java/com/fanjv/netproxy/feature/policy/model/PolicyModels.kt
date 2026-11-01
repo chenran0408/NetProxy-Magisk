@@ -30,6 +30,15 @@ internal data class PolicyModel(
 internal data class PolicyResponse(val schema: Int = 1, val policies: List<PolicyModel> = emptyList())
 
 @Serializable
+internal data class PolicySaveResponse(
+    val policy: PolicyModel,
+    val persisted: Boolean,
+    @SerialName("runtime_synced") val runtimeSynced: Boolean,
+) {
+    fun savedPolicy() = policy.copy(persisted = persisted, runtimeSynced = runtimeSynced)
+}
+
+@Serializable
 internal data class ChainProxyModel(
     val available: Boolean = false,
     val running: Boolean = false,
