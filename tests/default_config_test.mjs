@@ -20,7 +20,7 @@ test('模块设置只有 module.json 默认文件，字段使用 JSON 原生类�
   })
 })
 
-test('默认配置仅保留部署、运行时生成、模式命名与原生 DNS 响应匹配差异', () => {
+test('默认配置仅保留部署、运行时生成、模式命名、FCM 与原生 DNS 响应匹配差异', () => {
   const expected = structuredClone(upstream)
   expected.log.output = 'stderr'
   expected.experimental.cache_file.path = '/data/adb/modules/netproxy/config/singbox/cache.db'
@@ -37,6 +37,13 @@ test('默认配置仅保留部署、运行时生成、模式命名与原生 DNS 
   for (const rule of expected.route.rule_set) {
     rule.path = rule.path.replace('./source/rule_set/', './rules/remote/').replace('./source/', './rules/local/')
   }
+  expected.route.rule_set.find(rule => rule.type === 'local' && list(rule.tag).includes('proxy')).tag.push('fcm')
+  const localDirectIndex = expected.route.rules.findIndex(rule => rule.rule_set === 'direct')
+  expected.route.rules.splice(localDirectIndex + 1, 0, {
+    type: 'logical', mode: 'or',
+    rules: [{ rule_set: 'fcm' }, { network: 'tcp', port: [5228, 5229, 5230] }],
+    action: 'route', outbound: 'Proxy',
+  })
   // Remote rule sources are pinned per generated resource commit.
   expected.route.rule_set = expected.route.rule_set.filter(rule => rule.type !== 'remote')
     .concat(structuredClone(config.route.rule_set.filter(rule => rule.type === 'remote')))
