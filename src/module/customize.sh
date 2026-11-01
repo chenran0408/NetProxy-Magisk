@@ -99,6 +99,18 @@ has_existing_user_data() {
   [ -f "$LIVE_DIR/config/module.json" ] || [ -d "$LIVE_DIR/data/catalog" ]
 }
 
+# 参数: 无；使用已解出的包元信息与当前 live 模块元信息。
+# 返回: 0=首次安装、同构建号或升级，1=降级；必须在 APK 与配置修改前调用。
+check_install_version() {
+  [ -f "$LIVE_DIR/module.prop" ] || return 0
+  local installed_code package_code
+  installed_code="$(grep_prop versionCode "$LIVE_DIR/module.prop")"
+  package_code="$(grep_prop versionCode "$INSTALL_TMP/module.prop")"
+  [ "$package_code" -ge "$installed_code" ] && return 0
+  print_error "[module/version] 不支持降级：当前构建 $installed_code，安装包构建 $package_code；请使用相同或更新的安装包"
+  return 1
+}
+
 #######################################
 # 参数: $1 初始等待秒数，$2... 按顺序排列的选项，首项为默认。
 # 返回: 0=已确认或未操作时采用默认，1=读取失败或操作后超时；写入 VOLUME_CHOICE。
@@ -583,6 +595,7 @@ if [ "$(cd "$MODPATH" && pwd -P)" = "$LIVE_DIR" ]; then
 fi
 unzip -o "$ZIPFILE" module.prop -d "$INSTALL_TMP" >/dev/null 2>&1 || exit 1
 grep -qx "id=$MODULE_ID" "$INSTALL_TMP/module.prop" || exit 1
+check_install_version || exit 1
 print_title "NetProxy - sing-box 透明代理"
 ui_print "  版本: $(grep_prop version "$INSTALL_TMP/module.prop")"
 choose_install_mode || exit 1
