@@ -361,10 +361,18 @@ copy_user_data_locked() {
             || { failed=true; break; }
         fi
         if ! grep -q '"fcm"' "$snapshot/current/config/singbox/config.json"; then
-          sed -i 's/"tag": \["block", "direct", "proxy"\]/"tag": ["block", "direct", "proxy", "fcm"]/' \
-            "$snapshot/current/config/singbox/config.json" \
-            || { failed=true; break; }
-          grep -q '"fcm"' "$snapshot/current/config/singbox/config.json" || { failed=true; break; }
+          awk '
+            { content = content $0 "\n" }
+            END {
+              sub(/"tag"[[:space:]]*:[[:space:]]*\[[[:space:]]*"block"[[:space:]]*,[[:space:]]*"direct"[[:space:]]*,[[:space:]]*"proxy"[[:space:]]*\]/,
+                "\"tag\": [\"block\", \"direct\", \"proxy\", \"fcm\"]", content)
+              printf "%s", content
+            }
+          ' "$snapshot/current/config/singbox/config.json" > "$snapshot/current/config/singbox/config.json.fcm" \
+            && mv "$snapshot/current/config/singbox/config.json.fcm" "$snapshot/current/config/singbox/config.json" \
+            || { print_error "[module/preserve-fcm] FCM 规则引用迁移失败"; failed=true; break; }
+          grep -q '"fcm"' "$snapshot/current/config/singbox/config.json" \
+            || { print_error "[module/preserve-fcm] 未找到旧版内置本地规则引用"; failed=true; break; }
         fi
         if is_no_telemetry_build; then
           rm -rf "$snapshot/current/config/telemetry" || { failed=true; break; }

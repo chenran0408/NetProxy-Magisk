@@ -45,7 +45,7 @@ module_fixture() {
 }
 
 singbox_fixture() {
-  printf '{"fixture":"%s-config","route":{"rule_set":[{"type":"local","tag":["block", "direct", "proxy", "fcm"]}]}}\n' "$1"
+  printf '{"fixture":"%s-config","route":{"rule_set":[{"type":"local","tag": ["block", "direct", "proxy", "fcm"]}]}}\n' "$1"
 }
 
 write_module() {
@@ -248,6 +248,26 @@ test_snapshot_modes() (
     assert_value "$STAGE/runtime/providers.json" package-runtime
     [ ! -e "$STAGE/data/catalog/staging/download.tmp" ]
     [ -z "$(find "$STAGE" -name '.install-state.*' -print)" ]
+  done
+)
+
+test_legacy_fcm_preservation() (
+  for layout in spaced compact multiline; do
+    reset_modules
+    rm "$LIVE/config/singbox/rules/local/fcm.json"
+    sed -i 's/, "fcm"//' "$LIVE/config/singbox/config.json"
+    case "$layout" in
+      compact) sed -i 's/"tag": /"tag":/' "$LIVE/config/singbox/config.json" ;;
+      multiline) printf '{"fixture":"current-config","route":{"rule_set":[{"type":"local","tag": [\n  "block",\n  "direct",\n  "proxy"\n]}]}}\n' > "$LIVE/config/singbox/config.json" ;;
+    esac
+    copy_user_data_locked
+    cmp "$STAGE/config/singbox/rules/local/fcm.json" "$ROOT/src/module/config/singbox/rules/local/fcm.json"
+    assert_value "$STAGE/config/singbox/config.json" "$(singbox_fixture current)"
+    assert_value "$STAGE/config/singbox/rules/local/custom.json" current-local
+    assert_value "$STAGE/data/catalog/subscription/provider.json" subscription-provider
+    ! grep -q '"fcm"' "$LIVE/config/singbox/config.json"
+    [ ! -e "$LIVE/config/singbox/rules/local/fcm.json" ]
+    printf '[module/matrix] PASS legacy FCM %s, live configuration unchanged\n' "$layout"
   done
 )
 
@@ -793,6 +813,7 @@ test_install_choices
 test_key_events
 test_key_output_descriptor
 test_snapshot_modes
+test_legacy_fcm_preservation
 test_live_wrapper_module_dir
 test_snapshot_failure
 test_snapshot_rename_failure
