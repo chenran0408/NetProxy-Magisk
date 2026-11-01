@@ -44,6 +44,10 @@ module_fixture() {
   printf '{"auto_start":false,"selection":{"group_id":"default","node_tag":"%s"},"wifi":{"enabled":false,"mode":"blacklist","blacklist":[],"whitelist":[],"proxy_on_non_wifi":true}}\n' "$1"
 }
 
+singbox_fixture() {
+  printf '{"fixture":"%s-config","route":{"rule_set":[{"type":"local","tag":["block", "direct", "proxy", "fcm"]}]}}\n' "$1"
+}
+
 write_module() {
   target="$1" label="$2"
   mkdir -p "$target/bin" "$target/config/inbound" "$target/config/singbox/rules/local" \
@@ -52,8 +56,9 @@ write_module() {
   printf 'id=netproxy\nversion=%s\n' "$label" > "$target/module.prop"
   module_fixture "$label" > "$target/config/module.json"
   inbound_fixture "$label" > "$target/config/inbound/inbound.json"
-  printf '%s\n' "$label-config" > "$target/config/singbox/config.json"
+  singbox_fixture "$label" > "$target/config/singbox/config.json"
   printf '%s\n' "$label-local" > "$target/config/singbox/rules/local/custom.json"
+  cp "$ROOT/src/module/config/singbox/rules/local/fcm.json" "$target/config/singbox/rules/local/fcm.json"
   printf '%s\n' "$label-remote" > "$target/config/singbox/rules/remote/test.srs"
   printf '%s\n' "$label-cache" > "$target/config/singbox/cache.db"
   printf '%s\n' "$label-state" > "$target/config/singbox/custom-state/state.json"
@@ -222,7 +227,7 @@ test_snapshot_modes() (
     if [ "$mode" = preserve ]; then
       assert_inbound "$STAGE/config/inbound/inbound.json" current
       assert_module "$STAGE/config/module.json" current
-      assert_value "$STAGE/config/singbox/config.json" current-config
+      assert_value "$STAGE/config/singbox/config.json" "$(singbox_fixture current)"
       assert_value "$STAGE/config/singbox/rules/local/custom.json" current-local
       assert_value "$STAGE/config/singbox/cache.db" current-cache
       assert_value "$STAGE/config/singbox/custom-state/state.json" current-state
@@ -270,7 +275,7 @@ test_missing_current_data() (
   assert_module "$STAGE/config/module.json" package
   INSTALL_MODE=nodes
   copy_user_data_locked
-  assert_value "$STAGE/config/singbox/config.json" package-config
+  assert_value "$STAGE/config/singbox/config.json" "$(singbox_fixture package)"
   mkdir -p "$LIVE/runtime/.config-apply"
   if copy_user_data_locked; then exit 1; fi
 )
