@@ -1007,7 +1007,7 @@ func TestNetworkWatchFollowsPolicyWithoutStoppingOtherTasks(t *testing.T) {
 	options.NetworkStateReader = func(context.Context) (NetworkState, error) {
 		return NetworkState{NetworkType: "not_wifi"}, nil
 	}
-	options.NetworkEvaluate = func(context.Context, string, string) error { return nil }
+	options.NetworkEvaluate = func(context.Context, string, string, bool) error { return nil }
 	started, stopped := make(chan struct{}, 2), make(chan struct{}, 2)
 	options.NetworkEventSource = func(ctx context.Context, _ func()) error {
 		started <- struct{}{}

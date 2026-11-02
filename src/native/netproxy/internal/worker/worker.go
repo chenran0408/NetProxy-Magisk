@@ -77,7 +77,7 @@ type Options struct {
 	PersistedBeforeUpdate   bool
 	NetworkWatchEnabled     bool
 	SyncCatalog             func(context.Context, string, bool) (string, bool, error)
-	NetworkEvaluate         func(context.Context, string, string) error
+	NetworkEvaluate         func(ctx context.Context, networkType, ssid string, networkChanged bool) error
 	NetworkEventSource      NetworkEventSource
 	NetworkStateReader      NetworkStateReader
 	NetworkDebounceInterval time.Duration
