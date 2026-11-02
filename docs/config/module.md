@@ -69,4 +69,4 @@ su -c '/data/adb/modules/netproxy/netproxyctl config check'
 
 节点和订阅不保存在 `module.json`，而是在 `data/catalog/` 中维护。选择状态只保存分组 ID 和节点 tag，不要把节点文件路径或 UID 写入该文件。
 
-旧格式升级只能选择 **仅保留节点与订阅** 或 **全新安装**，不迁移、不读取旧格式。保留全数据要求当前 `module.json`、入站、主配置与 Catalog 完整；缺失或损坏时明确失败，不回退默认配置。
+旧格式升级只能选择 **仅保留节点、订阅与策略** 或 **全新安装**，不迁移、不读取旧格式。保留全数据要求当前 `module.json`、入站、主配置与 Catalog 完整；缺失或损坏时明确失败，不回退默认配置。

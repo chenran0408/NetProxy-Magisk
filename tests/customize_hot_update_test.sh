@@ -98,6 +98,7 @@ reset_modules() {
   printf '%s\n' 'temporary' > "$LIVE/data/catalog/staging/download.tmp"
   printf '%s\n' 'subscription-meta' > "$LIVE/data/catalog/subscription/meta.json"
   printf '%s\n' 'subscription-provider' > "$LIVE/data/catalog/subscription/provider.json"
+  printf '%s\n' 'current-policies' > "$LIVE/data/policies.json"
   : > "$LIVE/update"
   : > "$CALL_LOG"
   MODPATH="$STAGE"
@@ -222,10 +223,12 @@ test_snapshot_modes() (
     if [ "$mode" = fresh ]; then
       assert_value "$STAGE/data/catalog/default/provider.json" package-provider
       assert_value "$STAGE/logs/service.log" package-log
+      [ ! -e "$STAGE/data/policies.json" ]
     else
       assert_value "$STAGE/data/catalog/default/provider.json" current-provider
       assert_value "$STAGE/data/catalog/subscription/provider.json" subscription-provider
       assert_value "$STAGE/data/catalog/default/history.jsonl" current-history
+      assert_value "$STAGE/data/policies.json" current-policies
       assert_value "$STAGE/logs/service.log" current-log
     fi
     if [ "$mode" = preserve ]; then
@@ -249,6 +252,32 @@ test_snapshot_modes() (
     [ ! -e "$STAGE/data/catalog/staging/download.tmp" ]
     [ -z "$(find "$STAGE" -name '.install-state.*' -print)" ]
   done
+)
+
+test_policy_preservation() (
+  # 8.6.4 之前策略保存在 /dev/netproxy（重启即失）；保留数据与仅保留节点模式迁移一次。
+  for mode in preserve nodes; do
+    reset_modules
+    rm "$LIVE/data/policies.json"
+    mkdir -p "$WORKDIR/state"
+    printf '%s\n' 'legacy-policies' > "$WORKDIR/state/policies.json"
+    INSTALL_MODE="$mode"
+    copy_user_data_locked
+    assert_value "$STAGE/data/policies.json" legacy-policies
+  done
+  reset_modules
+  rm "$LIVE/data/policies.json"
+  mkdir -p "$WORKDIR/state"
+  printf '%s\n' 'legacy-policies' > "$WORKDIR/state/policies.json"
+  INSTALL_MODE=fresh
+  copy_user_data_locked
+  [ ! -e "$STAGE/data/policies.json" ]
+  reset_modules
+  rm "$LIVE/data/policies.json"
+  INSTALL_MODE=nodes
+  copy_user_data_locked
+  [ ! -e "$STAGE/data/policies.json" ]
+  printf '%s\n' '[module/matrix] PASS policy preservation across install modes'
 )
 
 test_legacy_fcm_preservation() (
@@ -326,7 +355,7 @@ test_missing_inbound() (
   wait_volume_key() { VOLUME_KEY=timeout; }
   if choose_install_mode > "$WORKDIR/menu"; then exit 1; fi
   grep -Fq 'config/inbound/inbound.json' "$WORKDIR/menu"
-  grep -Fq '请选择仅保留节点与订阅或全新安装' "$WORKDIR/menu"
+  grep -Fq '请选择仅保留节点、订阅与策略或全新安装' "$WORKDIR/menu"
   if copy_user_data_locked; then exit 1; fi
   assert_inbound "$STAGE/config/inbound/inbound.json" package
   for mode in nodes fresh; do
@@ -359,7 +388,7 @@ test_missing_module() (
   wait_volume_key() { VOLUME_KEY=timeout; }
   if choose_install_mode > "$WORKDIR/menu"; then exit 1; fi
   grep -Fq 'config/module.json' "$WORKDIR/menu"
-  grep -Fq '请选择仅保留节点与订阅或全新安装' "$WORKDIR/menu"
+  grep -Fq '请选择仅保留节点、订阅与策略或全新安装' "$WORKDIR/menu"
   if copy_user_data_locked; then exit 1; fi
   assert_module "$STAGE/config/module.json" package
   for mode in nodes fresh; do
@@ -813,6 +842,7 @@ test_install_choices
 test_key_events
 test_key_output_descriptor
 test_snapshot_modes
+test_policy_preservation
 test_legacy_fcm_preservation
 test_live_wrapper_module_dir
 test_snapshot_failure

@@ -155,7 +155,7 @@ func TestBuildRuntimeProjectsAutoManualAndMissingNode(t *testing.T) {
 		{ID: "youtube", RuleSets: []string{"geosite/video"}, GroupID: "default", Mode: "manual", NodeTag: "Tokyo", RuntimeTag: "Proxy"},
 		{ID: "google", RuleSets: []string{"geosite/google"}, GroupID: "default", Mode: "manual", NodeTag: "Removed", RuntimeTag: "Proxy"},
 	}
-	written, err := BuildRuntime(context.Background(), path, root, items)
+	written, err := BuildRuntime(context.Background(), path, root, filepath.Join(filepath.Dir(path), "chain-landing.json"), items)
 	if err != nil || !written {
 		t.Fatalf("BuildRuntime() = %v, %v", written, err)
 	}
@@ -177,7 +177,7 @@ func TestBuildRuntimeProjectsAutoManualAndMissingNode(t *testing.T) {
 
 func TestBuildRuntimeProjectsPackageAndDomainMatches(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "runtime", "policies.json")
-	written, err := BuildRuntime(context.Background(), path, t.TempDir(), []Policy{
+	written, err := BuildRuntime(context.Background(), path, t.TempDir(), filepath.Join(filepath.Dir(path), "chain-landing.json"), []Policy{
 		{ID: "ai", RuleSets: []string{"geosite/ai"}, PackageNames: []string{"com.openai.chatgpt"}, DomainSuffixes: []string{"openai.com"}, Mode: "proxy"},
 	})
 	if err != nil || !written {
@@ -196,7 +196,7 @@ func TestBuildRuntimeProjectsPackageAndDomainMatches(t *testing.T) {
 func TestBuildRuntimeKeepsPolicyPortsWithSelectedTarget(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(t.TempDir(), "runtime", "policies.json")
-	written, err := BuildRuntime(context.Background(), path, root, []Policy{
+	written, err := BuildRuntime(context.Background(), path, root, filepath.Join(filepath.Dir(path), "chain-landing.json"), []Policy{
 		{ID: "fcm", RuleSets: []string{"fcm"}, Ports: []int{5228, 5229, 5230}, Mode: "direct"},
 	})
 	if err != nil || !written {
@@ -219,7 +219,7 @@ func TestBuildRuntimeProjectsIndependentPolicyTargets(t *testing.T) {
 		{ID: "direct", RuleSets: []string{"fcm"}, Mode: "direct"},
 		{ID: "proxy", RuleSets: []string{"geosite/google"}, Mode: "proxy"},
 	}
-	written, err := BuildRuntime(context.Background(), path, root, items)
+	written, err := BuildRuntime(context.Background(), path, root, filepath.Join(filepath.Dir(path), "chain-landing.json"), items)
 	if err != nil || !written {
 		t.Fatalf("BuildRuntime() = %v, %v", written, err)
 	}
@@ -236,7 +236,30 @@ func TestBuildRuntimeProjectsIndependentPolicyTargets(t *testing.T) {
 func TestBuildRuntimeRejectsUnavailableChainTarget(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(t.TempDir(), "runtime", "policies.json")
-	if _, err := BuildRuntime(context.Background(), path, root, []Policy{{ID: "chain", RuleSets: []string{"fcm"}, Mode: "chain"}}); err == nil || !strings.Contains(err.Error(), "链式落地") {
+	if _, err := BuildRuntime(context.Background(), path, root, filepath.Join(filepath.Dir(path), "chain-landing.json"), []Policy{{ID: "chain", RuleSets: []string{"fcm"}, Mode: "chain"}}); err == nil || !strings.Contains(err.Error(), "链式落地") {
 		t.Fatalf("unavailable chain target was not rejected: %v", err)
+	}
+}
+
+func TestBuildRuntimeMapsChainPolicyWhenLandingExists(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(t.TempDir(), "runtime", "policies.json")
+	landing := filepath.Join(filepath.Dir(path), "chain-landing.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(landing, []byte(`{"outbounds":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	written, err := BuildRuntime(context.Background(), path, root, landing, []Policy{{ID: "chain", RuleSets: []string{"fcm"}, Mode: "chain"}})
+	if err != nil || !written {
+		t.Fatalf("BuildRuntime() = %v, %v", written, err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(content), catalog.ChainOutboundTag) {
+		t.Fatalf("chain policy did not target the chain outbound: %s", content)
 	}
 }

@@ -64,7 +64,9 @@
     <string name="policy_auto">自动</string>
     <string name="policy_manual">手动</string>
     <string name="policy_direct">直连</string>
+    <string name="policy_mode_direct_hint">匹配流量全部直连，不经过代理节点。</string>
     <string name="policy_proxy">Proxy</string>
+    <string name="policy_mode_proxy_hint">匹配流量全部走所选节点组的 Proxy 出站。</string>
     <string name="policy_chain">链式代理</string>
     <string name="policy_chain_unavailable">当前没有可用的链式落地节点，请选择其他出口</string>
     <string name="policy_chain_howto_title">链式代理怎么用</string>
@@ -79,7 +81,9 @@
     <string name="policy_chain_no_nodes">当前没有可用的前置或落地节点，请先更新订阅</string>
     <string name="policy_chain_save">保存链式配置</string>
     <string name="policy_chain_saving">保存中…</string>
-    <string name="policy_restore_node_selection">恢复节点/地区选择</string>
+    <string name="policy_chain_port_label">后置端口（落地连接端口）</string>
+    <string name="policy_chain_port_hint">留空或 0 使用节点原端口；部分订阅要求后置端口低于 10000 才能链式。</string>
+    <string name="policy_chain_port_invalid">请输入 1-65535 之间的端口</string>
     <string name="policy_group">节点来源：%1$s</string>
     <string name="policy_test">测速</string>
     <string name="policy_testing">测速中…</string>
@@ -88,6 +92,7 @@
     <string name="policy_region_selected">已启用</string>
     <string name="policy_region_all">全部</string>
     <string name="policy_global_auto">全部节点 · 自动测速</string>
+    <string name="policy_tab_fastest">全部最快</string>
     <string name="policy_global_auto_hint">在所有地区内自动选择最快节点</string>
     <string name="policy_region_auto_hint">仅在所选地区内自动选择最快节点</string>
     <string name="policy_all_nodes">地区内节点</string>
@@ -105,12 +110,9 @@
     <string name="policy_no_nodes">当前节点来源没有可用节点</string>
     <string name="policy_no_search_results">没有匹配的节点</string>
     <string name="policy_search_nodes">搜索节点</string>
-    <string name="policy_region_other">其他地区</string>
     <string name="policy_test_result">已测速 %1$d 个节点 · 最快 %2$d ms</string>
     <string name="policy_test_result_no_latency">已测速 %1$d 个节点 · 没有可用延迟</string>
     <string name="policy_test_empty">测速没有返回节点</string>
-    <string name="policy_expand">展开策略</string>
-    <string name="policy_collapse">收起策略</string>
     <string name="policy_add_custom">新增策略</string>
     <string name="policy_save_custom">保存策略</string>
     <string name="policy_saving">保存中…</string>

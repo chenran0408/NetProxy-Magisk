@@ -157,11 +157,11 @@ internal class PolicyViewModel(private val repository: PolicyRepository) : ViewM
         }
     }
 
-    fun saveChain(front: String, landing: String) {
+    fun saveChain(front: String, landing: String, landingPort: Int) {
         if (_state.value.busyId.isNotBlank()) return
         _state.update { it.copy(busyId = CHAIN_BUSY_ID, error = "") }
         viewModelScope.launch {
-            runCatching { repository.saveChain(front, landing) }
+            runCatching { repository.saveChain(front, landing, landingPort) }
                 .onSuccess { result -> _state.update { it.copy(chain = result, busyId = "") } }
                 .onFailure { error -> _state.update { it.copy(error = error.message.orEmpty(), busyId = "") } }
         }

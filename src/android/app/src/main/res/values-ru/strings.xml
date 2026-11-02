@@ -56,7 +56,9 @@
     <string name="policy_auto">Авто</string>
     <string name="policy_manual">Вручную</string>
     <string name="policy_direct">Прямое подключение</string>
+    <string name="policy_mode_direct_hint">Совпадающий трафик идёт напрямую, без прокси.</string>
     <string name="policy_proxy">Proxy</string>
+    <string name="policy_mode_proxy_hint">Совпадающий трафик идёт через исходящий Proxy выбранной группы.</string>
     <string name="policy_chain">Цепочка</string>
     <string name="policy_chain_unavailable">Цепочка недоступна; выберите другой выход.</string>
     <string name="policy_chain_howto_title">Как использовать цепочку</string>
@@ -71,7 +73,9 @@
     <string name="policy_chain_no_nodes">Нет доступных узлов; сначала обновите подписку</string>
     <string name="policy_chain_save">Сохранить цепочку</string>
     <string name="policy_chain_saving">Сохранение…</string>
-    <string name="policy_restore_node_selection">Вернуть выбор узла/региона</string>
+    <string name="policy_chain_port_label">Порт выходного узла</string>
+    <string name="policy_chain_port_hint">Пусто или 0 — использовать порт узла. Некоторые подписи требуют порт ниже 10000 для цепочки.</string>
+    <string name="policy_chain_port_invalid">Введите порт от 1 до 65535</string>
     <string name="policy_group">Группа: %1$s</string>
     <string name="policy_test">Проверить узлы</string>
     <string name="policy_testing">Проверка…</string>
@@ -80,6 +84,7 @@
     <string name="policy_region_selected">Включено</string>
     <string name="policy_region_all">Все</string>
     <string name="policy_global_auto">Быстрейший</string>
+    <string name="policy_tab_fastest">Быстрейший</string>
     <string name="policy_global_auto_hint">Автоматически выбирать быстрый узел во всех регионах</string>
     <string name="policy_region_auto_hint">Автоматически выбирать быстрый узел в регионе</string>
     <string name="policy_all_nodes">Узлы региона</string>
@@ -97,12 +102,9 @@
     <string name="policy_no_nodes">В этой группе нет узлов</string>
     <string name="policy_no_search_results">Нет узлов, соответствующих поиску</string>
     <string name="policy_search_nodes">Поиск узлов</string>
-    <string name="policy_region_other">Другие регионы</string>
     <string name="policy_test_result">Проверено узлов: %1$d · быстрее всего %2$d мс</string>
     <string name="policy_test_result_no_latency">Проверено узлов: %1$d · нет доступной задержки</string>
     <string name="policy_test_empty">Проверка не вернула узлы</string>
-    <string name="policy_expand">Развернуть стратегию</string>
-    <string name="policy_collapse">Свернуть стратегию</string>
     <string name="policy_add_custom">Добавить стратегию</string>
     <string name="policy_save_custom">Сохранить стратегию</string>
     <string name="policy_saving">Сохранение…</string>

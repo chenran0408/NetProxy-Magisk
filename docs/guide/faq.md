@@ -33,7 +33,7 @@ eBPF 的 `local.bypass_rule_set`、`shared.bypass_rule_set`、私网绕过和应
 
 ## 升级提示缺少 module.json 或 inbound.json
 
-保留全数据要求当前 `config/module.json`、`config/inbound/inbound.json`、主配置与 Catalog 完整。旧格式用户只能选择“仅保留节点与订阅”或“全新安装”；前者保留 Catalog 与日志、恢复默认配置。安装器不检测版本、不读取或迁移旧格式，也不静默补默认。
+保留全数据要求当前 `config/module.json`、`config/inbound/inbound.json`、主配置与 Catalog 完整。旧格式用户只能选择“仅保留节点、订阅与策略”或“全新安装”；前者保留 Catalog、策略与日志、恢复默认配置。安装器不检测版本、不读取或迁移旧格式，也不静默补默认。
 
 ## DNS 泄漏是什么
 

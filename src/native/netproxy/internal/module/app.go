@@ -147,7 +147,7 @@ func Prepare(ctx context.Context, options Options, allowEmpty bool) (PrepareResu
 	if err != nil {
 		return PrepareResult{}, err
 	}
-	policyFile := filepath.Join(filepath.Dir(options.StateFile), "policies.json")
+	policyFile := paths.New(options.ModuleDir).Policies()
 	policies, err := policy.Load(ctx, policyFile)
 	if err != nil {
 		return PrepareResult{}, err
@@ -202,13 +202,13 @@ func Prepare(ctx context.Context, options Options, allowEmpty bool) (PrepareResu
 	// the sing-box config directory with a leading name so its route rules
 	// precede the base config's final catch-all rule.
 	policyPath := filepath.Join(options.SingBoxDir, "00-policies.json")
-	if _, err := policy.BuildRuntime(ctx, policyPath, options.CatalogRoot, policies); err != nil {
+	if _, err := policy.BuildRuntime(ctx, policyPath, options.CatalogRoot, catalog.ChainLandingOutputPath(providers), policies); err != nil {
 		return PrepareResult{}, err
 	}
 	if err := os.MkdirAll(filepath.Dir(policyFile), 0o700); err != nil {
 		return PrepareResult{}, err
 	}
-	if err := os.WriteFile(filepath.Join(filepath.Dir(policyFile), "policy-runtime.synced"), []byte("synced\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(filepath.Dir(options.StateFile), "policy-runtime.synced"), []byte("synced\n"), 0o600); err != nil {
 		return PrepareResult{}, err
 	}
 	network, err := configuredNetwork(ctx, options)
@@ -888,8 +888,8 @@ func workerOptions(options Options) worker.Options {
 			return SyncCatalog(ctx, options, groupID, structureChanged)
 		},
 		Now: time.Now,
-		NetworkEvaluate: func(ctx context.Context, networkType, ssid string) error {
-			_, err := EvaluateNetwork(ctx, options, networkType, ssid)
+		NetworkEvaluate: func(ctx context.Context, networkType, ssid string, networkChanged bool) error {
+			_, err := EvaluateNetwork(ctx, options, networkType, ssid, networkChanged)
 			return err
 		},
 	}

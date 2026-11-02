@@ -416,6 +416,31 @@ func TestChainLandingCopiesPreserveRawFields(t *testing.T) {
 	}
 }
 
+func TestBuildRuntimeOverridesChainLandingPort(t *testing.T) {
+	root := t.TempDir()
+	writeGroup(t, root, "default", "前置订阅", "subscription", "香港")
+	writeGroup(t, root, "landing", "落地订阅", "subscription", "美国")
+	moduleConfig := filepath.Join(t.TempDir(), "module.json")
+	if err := os.WriteFile(moduleConfig, []byte(`{"selection":{"group_id":"default"},"chain":{"landing_port":9876}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runtimeDir := t.TempDir()
+	if _, err := BuildRuntime(t.Context(), RuntimeOptions{
+		Root: root, ModuleConfig: moduleConfig,
+		ProvidersOutput: filepath.Join(runtimeDir, "providers.json"),
+		OutboundsOutput: filepath.Join(runtimeDir, "outbounds.json"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	landing := readFile(t, filepath.Join(runtimeDir, "chain-landing.json"))
+	if !strings.Contains(landing, `"server_port": 9876`) || strings.Contains(landing, `"server_port": 1080`) {
+		t.Fatalf("后置端口覆写未生效: %s", landing)
+	}
+	if got := readFile(t, filepath.Join(root, "landing", "provider.json")); strings.Contains(got, `"server_port": 9876`) {
+		t.Fatal("端口覆写不应修改持久化 Provider")
+	}
+}
+
 func TestBuildRuntimeWithoutEligibleProvidersRemovesLandingFile(t *testing.T) {
 	root := t.TempDir()
 	directory := filepath.Join(root, "default")

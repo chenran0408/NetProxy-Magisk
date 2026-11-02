@@ -190,22 +190,22 @@ func TestResourcesPolicyListSaveAndValidation(t *testing.T) {
 		t.Fatalf("策略列表遗漏默认策略或可用组: %s", response.Body.String())
 	}
 	resourceAssertSuccess(t, server, "PUT", "/api/v1/policies/ai", `{"group_id":"default","node_tag":"节点 / 02","mode":"manual"}`, "policy.saved", nil)
-	stored, err := os.ReadFile(filepath.Join(filepath.Dir(server.options.StateFile), "policies.json"))
+	stored, err := os.ReadFile(paths.New(server.options.ModuleDir).Policies())
 	if err != nil || !strings.Contains(string(stored), `"node_tag":"节点 / 02"`) || !strings.Contains(string(stored), `"mode":"manual"`) {
 		t.Fatalf("手动策略未持久化: %s, %v", stored, err)
 	}
 	resourceAssertSuccess(t, server, "PUT", "/api/v1/policies/ai", `{"group_id":"default","node_tag":"","mode":"auto"}`, "policy.saved", nil)
-	stored, err = os.ReadFile(filepath.Join(filepath.Dir(server.options.StateFile), "policies.json"))
+	stored, err = os.ReadFile(paths.New(server.options.ModuleDir).Policies())
 	if err != nil || !strings.Contains(string(stored), `"mode":"auto"`) || !strings.Contains(string(stored), `"node_tag":""`) {
 		t.Fatalf("Auto 选择未持久化: %s, %v", stored, err)
 	}
 	resourceAssertSuccess(t, server, "PUT", "/api/v1/policies/ai", `{"group_id":"default","node_tag":"","mode":"auto","region":"other"}`, "policy.saved", nil)
-	stored, err = os.ReadFile(filepath.Join(filepath.Dir(server.options.StateFile), "policies.json"))
+	stored, err = os.ReadFile(paths.New(server.options.ModuleDir).Policies())
 	if err != nil || !strings.Contains(string(stored), `"mode":"auto"`) || !strings.Contains(string(stored), `"region":"other"`) || !strings.Contains(string(stored), `"node_tag":""`) {
 		t.Fatalf("地区自动选择未持久化为地区而非节点: %s, %v", stored, err)
 	}
 	resourceAssertSuccess(t, server, "PUT", "/api/v1/policies/ai", `{"group_id":"default","node_tag":"","mode":"direct"}`, "policy.saved", nil)
-	stored, err = os.ReadFile(filepath.Join(filepath.Dir(server.options.StateFile), "policies.json"))
+	stored, err = os.ReadFile(paths.New(server.options.ModuleDir).Policies())
 	if err != nil || !strings.Contains(string(stored), `"mode":"direct"`) {
 		t.Fatalf("独立直连策略未持久化: %s, %v", stored, err)
 	}
@@ -249,7 +249,7 @@ func TestResourcesCustomPolicyCrud(t *testing.T) {
 	}
 	resourceAssertSuccess(t, server, "PUT", "/api/v1/policies/"+created.Policy.ID, `{"group_id":"default","node_tag":"节点 / 02","mode":"manual"}`, "policy.saved", nil)
 	resourceAssertSuccess(t, server, "PUT", "/api/v1/policies/"+created.Policy.ID, `{"name":"Work app 2"}`, "policy.saved", nil)
-	stored, err := os.ReadFile(filepath.Join(filepath.Dir(server.options.StateFile), "policies.json"))
+	stored, err := os.ReadFile(paths.New(server.options.ModuleDir).Policies())
 	if err != nil || !strings.Contains(string(stored), `"node_tag":"节点 / 02"`) || !strings.Contains(string(stored), `"mode":"manual"`) {
 		t.Fatalf("仅修改自定义策略定义时不应清除出口选择: %s, %v", stored, err)
 	}
@@ -258,6 +258,18 @@ func TestResourcesCustomPolicyCrud(t *testing.T) {
 	response, result := resourceRequest(t, server, "DELETE", "/api/v1/policies/ai", "")
 	if response.Code != http.StatusBadRequest || result.Code != "usage.invalid" {
 		t.Fatalf("built-in policy deletion should be rejected: %s", response.Body.String())
+	}
+}
+
+func TestResourcesChainSaveRejectsInvalidLandingPort(t *testing.T) {
+	server := resourceFixture(t)
+	response, result := resourceRequest(t, server, "GET", "/api/v1/chain", "")
+	if response.Code != http.StatusOK || result.Code != "chain.current" || !strings.Contains(string(result.Data), `"landing_port":0`) {
+		t.Fatalf("链式设置未返回后置端口: %s", response.Body.String())
+	}
+	response, result = resourceRequest(t, server, "PUT", "/api/v1/chain", `{"front":"链式前置","landing":"链式代理/节点 / 02","landing_port":70000}`)
+	if response.Code != http.StatusBadRequest || result.Code != "usage.invalid" || !strings.Contains(response.Body.String(), "后置端口") {
+		t.Fatalf("无效后置端口未被拒绝: %s", response.Body.String())
 	}
 }
 

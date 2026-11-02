@@ -21,6 +21,7 @@ import (
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
 	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/policy"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/serviceapi"
@@ -110,7 +111,7 @@ func TestPrepareWritesPolicyOverlayAlongsideCatalogRuntime(t *testing.T) {
 	items := policy.Defaults()
 	items[0].Mode = "manual"
 	items[0].NodeTag = "NODE"
-	if err := policy.Save(t.Context(), filepath.Join(filepath.Dir(options.StateFile), "policies.json"), items); err != nil {
+	if err := policy.Save(t.Context(), paths.New(options.ModuleDir).Policies(), items); err != nil {
 		t.Fatal(err)
 	}
 	prepared, err := Prepare(t.Context(), options, false)

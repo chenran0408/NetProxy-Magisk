@@ -35,12 +35,51 @@ func TestModuleJSONDefaultsAndStrictValidation(t *testing.T) {
 		`{"wifi":{"blacklist":["escaped\nname"]}}`,
 		`{"wifi":{"blacklist":["escaped\u007fname"]}}`,
 		`{"wifi":{"blacklist":["same"],"blacklist":[]}}`,
+		`{"chain":null}`, `{"chain":[]}`, `{"chain":{"landing_port":"x"}}`,
+		`{"chain":{"landing_port":-1}}`, `{"chain":{"landing_port":65536}}`,
 		"AUTO_START=0\n",
 		string([]byte{'{', '"', 'x', '"', ':', '"', 0xff, '"', '}'}),
 	} {
 		if _, err := ParseModule([]byte(content)); err == nil {
 			t.Fatalf("无效配置被接受: %q", content)
 		}
+	}
+}
+
+func TestChainLandingPortUpdateKeepsOtherFields(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "module.json")
+	original := `{"auto_start":true,"selection":{"group_id":"default"},"wifi":{"mode":"whitelist","blacklist":["Home"]}}`
+	if err := os.WriteFile(path, []byte(original), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := UpdateChainLandingPort(t.Context(), path, 9876); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadModule(path)
+	if err != nil || got.Chain.LandingPort != 9876 || !got.AutoStart || got.SelectedNodeTag != "" ||
+		got.WiFi.Mode != "whitelist" || !reflect.DeepEqual(got.WiFi.Blacklist, []string{"Home"}) {
+		t.Fatalf("端口更新丢失其他字段: %+v %v", got, err)
+	}
+	if err := UpdateChainLandingPort(t.Context(), path, 9876); err != nil {
+		t.Fatal(err)
+	}
+	unchanged, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(after, unchanged) {
+		t.Fatal("无变更仍替换了原文件")
+	}
+	if err := UpdateChainLandingPort(t.Context(), path, 70000); err == nil {
+		t.Fatal("接受了无效端口")
+	}
+	got, err = LoadModule(path)
+	if err != nil || got.Chain.LandingPort != 9876 {
+		t.Fatalf("失败更新修改了原文件: %+v %v", got, err)
 	}
 }
 

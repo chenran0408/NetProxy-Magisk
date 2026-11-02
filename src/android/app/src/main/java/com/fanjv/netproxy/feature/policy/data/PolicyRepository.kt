@@ -58,9 +58,10 @@ internal class PolicyRepository(private val client: ModuleApiClient) {
         client.post("/policies/${policy.id}/url-test").data
     )
 
-    suspend fun saveChain(front: String, landing: String): ChainProxyModel =
+    suspend fun saveChain(front: String, landing: String, landingPort: Int): ChainProxyModel =
         client.put("/chain", buildJsonObject {
             put("front", front)
             put("landing", landing)
+            put("landing_port", landingPort)
         }).data.let { client.json.decodeFromJsonElement<ChainProxyModel>(it) }
 }

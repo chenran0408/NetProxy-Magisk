@@ -39,7 +39,7 @@ Wi-Fi 策略保存在 `config/module.json` 的 `wifi` 对象。`module/wifi` 分
 
 保存使用读取 `module/wifi` 时的独立 revision，只替换 `wifi`，保留最新节点选择与开机自启。候选不能用 `{}` 删除分区，也不能包含 `selection` 或 `auto_start`。读取与应用示例见 [模块设置](/config/module#修改与检查)。
 
-旧格式升级只能选择 **仅保留节点与订阅** 或 **全新安装**，不迁移旧配置。
+旧格式升级只能选择 **仅保留节点、订阅与策略** 或 **全新安装**，不迁移旧配置。
 
 ## DNS 与运行时
 

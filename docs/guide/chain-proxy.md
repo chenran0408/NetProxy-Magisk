@@ -15,10 +15,14 @@
 
 前置和落地可以来自不同订阅。请选择两个不同节点，并确认前置节点能够连接落地协议；Hysteria、Hysteria2 和 TUIC 等 UDP 落地协议需要前置链路支持 UDP 转发。
 
+## 后置端口
+
+部分订阅要求落地连接使用指定端口（例如低于 10000 的专线端口）才允许链式。链式设置里可以填写 `后置端口`：保存后落地副本会改用该端口连接，留空或 0 表示使用节点原端口。端口范围 1-65535，保存时立即重载生效；该设置保存在 `config/module.json` 的 `chain.landing_port`，随“保留现有数据”升级保留。
+
 ## 更新与兼容
 
 - 链式落地副本只写入运行时配置，不会修改或污染 Catalog 中的用户 Provider 文件。
-- 订阅更新后，运行时会从最新 Provider 重新生成副本；原节点失效时 sing-box 会按当前可用选择恢复。
+- 服务重启或配置重载时会从最新 Provider 重新生成副本；原节点失效时 sing-box 会按当前可用选择恢复。仅热更新的订阅更新不会立即重建落地副本，重启服务后生效。
 - 链式副本不参与普通分组的周期性健康检查，避免节点被重复测速；需要确认完整链路时可在 Dashboard 手动测速。
 - HTTP、SOCKS、Shadowsocks、VMess、VLESS、Trojan、AnyTLS、Snell、ShadowTLS、Hysteria、Hysteria2 和 TUIC 可作为落地协议。
 - 含 WireGuard/Tailscale Endpoint，或含 SSH、Naive、Tor 等不支持 dialer 覆盖的分组，不会生成落地副本。

@@ -182,40 +182,11 @@ internal fun CatalogDashboardScreen(
                 item {
                     Card(modifier = Modifier.fillMaxWidth()) {
                         val modeValues = state.availableOutboundModes
-                        val modeLabels = modeValues.map { mode ->
-                            when (mode) {
-                                "Rule" -> stringResource(R.string.dashboard_mode_rule)
-                                "Proxy" -> stringResource(R.string.dashboard_mode_proxy)
-                                "Direct" -> stringResource(R.string.dashboard_mode_direct)
-                                "RuleAllowAds" -> stringResource(R.string.dashboard_mode_rule_allow_ads)
-                                else -> mode
-                            }
-                        }
-                        val selectedModeIndex = modeValues.indexOf(state.outboundMode)
-                        val modeItems = if (selectedModeIndex >= 0) {
-                            modeLabels
-                        } else {
-                            listOf(
-                                if (state.outboundMode == "unknown") stringResource(R.string.dashboard_mode_unknown)
-                                else state.outboundMode
-                            ) + modeLabels
-                        }
-                        OverlayDropdownPreference(
-                            title = stringResource(R.string.dashboard_outbound_mode),
+                        DashboardModeGrid(
+                            modes = modeValues,
+                            selectedMode = state.outboundMode,
                             enabled = availability?.available == true && !state.loading,
-                            items = modeItems,
-                            selectedIndex = if (selectedModeIndex >= 0) selectedModeIndex else 0,
-                            startAction = {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Rounded.AltRoute,
-                                    contentDescription = null,
-                                    tint = colorScheme.primary
-                                )
-                            },
-                            onSelectedIndexChange = { index ->
-                                val actualIndex = if (selectedModeIndex >= 0) index else index - 1
-                                modeValues.getOrNull(actualIndex)?.let(viewModel::setMode)
-                            }
+                            onSelect = viewModel::setMode
                         )
                         ArrowPreference(
                             title = stringResource(R.string.dashboard_current_node),

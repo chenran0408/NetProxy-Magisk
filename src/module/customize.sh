@@ -168,7 +168,7 @@ choose_install_mode() {
   print_title "选择安装方式"
   local timeout=10
   while :; do
-    choose_volume_option "$timeout" "保留现有数据" "仅保留节点与订阅（配置恢复默认）" \
+    choose_volume_option "$timeout" "保留现有数据" "仅保留节点、订阅与策略（配置恢复默认）" \
       "全新安装（不保留现有数据）" || return 1
     case "$VOLUME_CHOICE" in
       1) INSTALL_MODE=preserve ;;
@@ -194,7 +194,7 @@ choose_install_mode() {
     local entry
     for entry in $CONFIG_ENTRIES; do
       [ -e "$LIVE_DIR/$entry" ] || {
-        print_error "当前用户配置不完整：$entry；请选择仅保留节点与订阅或全新安装"
+        print_error "当前用户配置不完整：$entry；请选择仅保留节点、订阅与策略或全新安装"
         return 1
       }
     done
@@ -291,8 +291,8 @@ copy_catalog_state() {
 # 返回: 0=输出保留清单，1=安装模式无效。
 persistent_entries() {
   case "$INSTALL_MODE" in
-    preserve) printf '%s\n' config data/catalog logs ;;
-    nodes) printf '%s\n' data/catalog logs ;;
+    preserve) printf '%s\n' config data/catalog data/policies.json logs ;;
+    nodes) printf '%s\n' data/catalog data/policies.json logs ;;
     fresh) ;;
     *) return 1 ;;
   esac
@@ -342,6 +342,15 @@ copy_user_data_locked() {
   snapshot="$(mktemp -d "$MODPATH/.install-state.XXXXXX")" || return 1
   : > "$snapshot/applied" || return 1
   for entry in $entries; do
+    if [ "$entry" = data/policies.json ] && [ ! -e "$LIVE_DIR/$entry" ]; then
+      # 8.6.4 之前策略保存在 /dev/netproxy（重启即失）；热更新时迁移到持久化目录。
+      if [ -f /dev/netproxy/policies.json ]; then
+        mkdir -p "$snapshot/current/data" || { failed=true; break; }
+        cp -p /dev/netproxy/policies.json "$snapshot/current/data/policies.json" \
+          || { failed=true; break; }
+      fi
+      continue
+    fi
     [ -e "$LIVE_DIR/$entry" ] || continue
     mkdir -p "$snapshot/current/$(dirname "$entry")" || { failed=true; break; }
     if [ "$entry" = data/catalog ]; then

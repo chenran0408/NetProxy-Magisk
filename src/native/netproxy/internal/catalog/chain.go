@@ -53,7 +53,7 @@ type chainRuntime struct {
 	LandingTags    []string
 }
 
-func buildChainRuntime(ctx context.Context, groups []*loadedGroup, landingOutput string) (*chainRuntime, error) {
+func buildChainRuntime(ctx context.Context, groups []*loadedGroup, landingOutput string, landingPort int) (*chainRuntime, error) {
 	result := &chainRuntime{}
 	copies := make([]map[string]jsontext.Value, 0)
 	for _, group := range groups {
@@ -70,7 +70,7 @@ func buildChainRuntime(ctx context.Context, groups []*loadedGroup, landingOutput
 		if err != nil {
 			return nil, err
 		}
-		groupCopies, err := chainLandingCopies(group.ProviderPath, group.RuntimeTag, eligibleTags)
+		groupCopies, err := chainLandingCopies(group.ProviderPath, group.RuntimeTag, eligibleTags, landingPort)
 		if err != nil {
 			return nil, fmt.Errorf("生成分组 %s 的链式落地副本: %w", group.ID, err)
 		}
@@ -128,7 +128,7 @@ func chainSelectableTag(tag string) bool {
 
 // chainLandingCopies 直接复制 Provider 原始 JSON 中的节点对象，只改写
 // tag 并追加 detour；不能经过 option 结构体序列化，否则会丢失协议字段。
-func chainLandingCopies(providerPath, runtimeTag string, eligible map[string]struct{}) ([]map[string]jsontext.Value, error) {
+func chainLandingCopies(providerPath, runtimeTag string, eligible map[string]struct{}, landingPort int) ([]map[string]jsontext.Value, error) {
 	content, err := os.ReadFile(providerPath)
 	if err != nil {
 		return nil, err
@@ -158,6 +158,13 @@ func chainLandingCopies(providerPath, runtimeTag string, eligible map[string]str
 			return nil, err
 		}
 		outbound["detour"] = detourValue
+		if landingPort > 0 {
+			portValue, err := json.Marshal(landingPort)
+			if err != nil {
+				return nil, err
+			}
+			outbound["server_port"] = portValue
+		}
 		copies = append(copies, outbound)
 	}
 	return copies, nil
@@ -169,6 +176,6 @@ func writeChainLandingFile(path string, outbounds []map[string]jsontext.Value) e
 	}{Outbounds: outbounds})
 }
 
-func chainLandingOutputPath(providersOutput string) string {
+func ChainLandingOutputPath(providersOutput string) string {
 	return filepath.Join(filepath.Dir(providersOutput), "chain-landing.json")
 }

@@ -2,7 +2,11 @@ package com.fanjv.netproxy.feature.policy.presentation
 
 import android.content.Context
 import android.widget.Toast
-import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -17,23 +21,27 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Block
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Hub
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SmartToy
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.runtime.Composable
@@ -46,8 +54,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
@@ -85,7 +96,6 @@ import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.basic.rememberPullToRefreshState
 import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.ExpandLess
 import top.yukonga.miuix.kmp.icon.extended.ExpandMore
 import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
@@ -111,9 +121,6 @@ internal fun PolicyScreen(
     var pickerPolicyId by remember { mutableStateOf<String?>(null) }
     var pickerGroupId by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
-    var expandedPolicies by remember {
-        mutableStateOf(displayPreferences.getStringSet("expanded_policies", emptySet()).orEmpty())
-    }
     var layoutDensity by remember {
         mutableIntStateOf(
             displayPreferences.getInt(
@@ -150,7 +157,9 @@ internal fun PolicyScreen(
             policyEditorId = null
             Toast.makeText(context, state.error.ifBlank { savedMessage }, if (state.error.isBlank()) Toast.LENGTH_SHORT else Toast.LENGTH_LONG).show()
             val index = state.policies.indexOfFirst { it.id == state.savedCustomPolicyId }
-            if (index >= 0) listState.animateScrollToItem(index + if (state.error.isNotBlank()) 1 else 0)
+            // Leading items (error row, chain entry) shift policy positions down.
+            val leadingItems = (if (state.error.isNotBlank()) 1 else 0) + (if (state.chain.available) 1 else 0)
+            if (index >= 0) listState.animateScrollToItem(index + leadingItems)
             else if (state.error.isNotBlank()) listState.animateScrollToItem(0)
         }
     }
@@ -161,12 +170,6 @@ internal fun PolicyScreen(
         policyEditorId = id
     }
 
-    fun togglePolicy(policyId: String) {
-        val next = if (policyId in expandedPolicies) expandedPolicies - policyId else expandedPolicies + policyId
-        expandedPolicies = next
-        displayPreferences.edit { putStringSet("expanded_policies", next) }
-    }
-
     Scaffold(topBar = {
         BlurredBar(backdrop) {
             TopAppBar(
@@ -174,9 +177,11 @@ internal fun PolicyScreen(
                 title = stringResource(R.string.policies),
                 scrollBehavior = scrollBehavior,
                 actions = {
-                    IconButton(enabled = !state.loading && state.busyId.isBlank(), onClick = viewModel::refresh) {
-                        Icon(Icons.Rounded.Refresh, stringResource(R.string.common_update))
-                    }
+                    RefreshAction(
+                        enabled = !state.loading && state.busyId.isBlank(),
+                        loading = state.loading,
+                        onClick = { viewModel.refresh(force = true) }
+                    )
                     TopBarMoreMenu(
                         expanded = showMoreMenu,
                         onExpandedChange = { showMoreMenu = it },
@@ -209,7 +214,7 @@ internal fun PolicyScreen(
             else -> {
                 PullToRefresh(
                     isRefreshing = state.loading,
-                    onRefresh = viewModel::refresh,
+                    onRefresh = { viewModel.refresh(force = true) },
                     pullToRefreshState = pullToRefreshState,
                     topAppBarScrollBehavior = scrollBehavior,
                     refreshTexts = refreshTexts,
@@ -228,25 +233,26 @@ internal fun PolicyScreen(
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         if (state.error.isNotBlank()) item { Text(state.error, color = colorScheme.error) }
+                        if (state.chain.available) {
+                            item {
+                                ChainEntryCard(
+                                    chain = state.chain,
+                                    busy = state.busyId == CHAIN_BUSY_ID,
+                                    onClick = { showChainSheet = true }
+                                )
+                            }
+                        }
                         items(state.policies, key = PolicyModel::id) { policy ->
-                            PolicyCard(
+                            PolicyRow(
                                 policy = policy,
-                                expanded = policy.id in expandedPolicies,
                                 busy = state.busyId == policy.id,
                                 delay = state.delays[policy.id],
-                                columns = layoutDensity + 1,
-                                itemSize = itemSize,
-                                sortMode = sortMode,
-                                onToggleExpanded = { togglePolicy(policy.id) },
-                                onChooseNodes = {
+                                onOpen = {
                                     pickerPolicyId = policy.id
                                     pickerGroupId = policy.groupId
                                 },
-                                onOpenChain = { showChainSheet = true },
                                 onEditCustom = { openCustomEditor(policy.id) },
                                 onDeleteCustom = { deletePolicyId = policy.id },
-                                onSelect = viewModel::select,
-                                onTest = viewModel::test
                             )
                         }
                     }
@@ -320,16 +326,19 @@ internal fun PolicyScreen(
             PolicyNodePicker(
                 policy = pickerPolicy,
                 groupId = pickerGroupId,
+                chain = state.chain,
                 delay = state.delays[pickerPolicy.id],
                 error = state.error,
-                columns = layoutDensity + 1,
-                itemSize = itemSize,
                 sortMode = sortMode,
                 busy = state.busyId == pickerPolicy.id,
                 onGroupSelected = { pickerGroupId = it },
                 onSelect = { groupId, nodeTag, mode, region ->
                     viewModel.select(pickerPolicy, groupId, nodeTag, mode, region)
                     pickerPolicyId = null
+                },
+                onOpenChain = {
+                    pickerPolicyId = null
+                    showChainSheet = true
                 },
                 onTest = { viewModel.test(pickerPolicy) }
             )
@@ -392,214 +401,182 @@ internal fun PolicyScreen(
     }
 }
 
+/** 顶栏刷新按钮：加载中旋转，给快速刷新一个可感知的动作反馈。 */
 @Composable
-private fun PolicyCard(
+private fun RefreshAction(enabled: Boolean, loading: Boolean, onClick: () -> Unit) {
+    val spin = rememberInfiniteTransition(label = "refresh")
+    val angle by spin.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing)),
+        label = "angle"
+    )
+    IconButton(enabled = enabled, onClick = onClick) {
+        Icon(
+            Icons.Rounded.Refresh,
+            stringResource(R.string.common_update),
+            modifier = Modifier.rotate(if (loading) angle else 0f)
+        )
+    }
+}
+
+@Composable
+private fun PolicyRow(
     policy: PolicyModel,
-    expanded: Boolean,
     busy: Boolean,
     delay: NodeDelayResult?,
-    columns: Int,
-    itemSize: Int,
-    sortMode: Int,
-    onToggleExpanded: () -> Unit,
-    onChooseNodes: () -> Unit,
-    onOpenChain: () -> Unit,
+    onOpen: () -> Unit,
     onEditCustom: () -> Unit,
     onDeleteCustom: () -> Unit,
-    onSelect: (PolicyModel, String, String, String, String) -> Unit,
-    onTest: (PolicyModel) -> Unit
 ) {
     val group = policy.groups.firstOrNull { it.group.id == policy.groupId }
-    // Proxy is a global outbound shortcut, but it must still expose the
-    // normal group/node picker so users can return to region or manual mode.
-    val usesNodes = policy.mode == "auto" || policy.mode == "manual" || policy.mode == "proxy"
-    Card(modifier = Modifier.fillMaxWidth().animateContentSize(), onClick = onToggleExpanded) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                PolicyIcon(policy)
-                Column(
-                    modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    Text(policy.name, fontSize = 16.sp, fontWeight = FontWeight.Medium)
-                    Text(
-                        policy.ruleSets.joinToString(" · ").ifBlank { policy.type },
-                        fontSize = 12.sp,
-                        color = colorScheme.onSurfaceVariantSummary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+    Card(modifier = Modifier.fillMaxWidth(), onClick = if (!busy) onOpen else null) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            PolicyIcon(policy)
+            Column(
+                modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                Text(
+                    policy.name,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(colorScheme.primary.copy(alpha = 0.12f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            policyTargetLabel(policy),
+                            fontSize = 11.sp,
+                            color = colorScheme.primary,
+                            maxLines = 1
+                        )
+                    }
+                    val selectedNode = if (policy.mode == "manual") {
+                        group?.nodes?.firstOrNull { it.tag == policy.nodeTag }
+                    } else null
+                    val flag = selectedNode?.let { node ->
+                        val tag = node.tag
+                        if (tag.length >= 2 && tag[0].isSurrogate() && tag[1].isSurrogate()) tag.take(2) else null
+                    }.orEmpty()
+                    if (flag.isNotBlank()) {
+                        Text(flag, fontSize = 13.sp, modifier = Modifier.padding(start = 8.dp))
+                    }
+                    if (policy.mode == "auto" || policy.mode == "manual") {
+                        Text(
+                            policySelectionSummary(policy, group),
+                            modifier = Modifier.weight(1f).padding(start = 8.dp),
+                            fontSize = 12.sp,
+                            color = colorScheme.onSurfaceVariantActions,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    } else {
+                        Spacer(Modifier.weight(1f))
+                    }
+                    val latency = selectedNode?.let { node -> nodeLatency(node, delay) }
+                    if (latency != null) {
+                        Text(
+                            "$latency ms",
+                            fontSize = 11.sp,
+                            color = colorScheme.onSurfaceVariantSummary,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+            if (policy.isCustom) {
+                IconButton(enabled = !busy, onClick = onEditCustom) {
+                    Icon(
+                        Icons.Rounded.Edit,
+                        contentDescription = stringResource(R.string.policy_edit_custom),
+                        modifier = Modifier.size(18.dp),
+                        tint = colorScheme.onSurfaceVariantActions
                     )
                 }
+                IconButton(enabled = !busy, onClick = onDeleteCustom) {
+                    Icon(
+                        Icons.Rounded.Delete,
+                        contentDescription = stringResource(R.string.policy_delete_custom),
+                        modifier = Modifier.size(18.dp),
+                        tint = colorScheme.error
+                    )
+                }
+            }
+            RuntimeDot(policy.runtimeSynced)
+        }
+    }
+}
+
+@Composable
+private fun ChainEntryCard(
+    chain: ChainProxyModel,
+    busy: Boolean,
+    onClick: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.defaultColors(color = colorScheme.primary.copy(alpha = 0.08f)),
+        onClick = if (!busy) onClick else null
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(colorScheme.primary.copy(alpha = 0.16f)),
+                contentAlignment = Alignment.Center
+            ) {
                 Icon(
-                    imageVector = if (expanded) MiuixIcons.ExpandLess else MiuixIcons.ExpandMore,
-                    contentDescription = stringResource(if (expanded) R.string.policy_collapse else R.string.policy_expand),
-                    modifier = Modifier.size(20.dp),
-                    tint = colorScheme.onSurfaceVariantActions
+                    imageVector = Icons.Rounded.Hub,
+                    contentDescription = null,
+                    tint = colorScheme.primary,
+                    modifier = Modifier.size(22.dp)
                 )
             }
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        policyTargetLabel(policy),
-                        color = colorScheme.primary,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        policySelectionSummary(policy, group),
-                        fontSize = 13.sp,
-                        color = colorScheme.onSurfaceVariantActions,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                RuntimeBadge(policy.runtimeSynced)
+            Column(
+                modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.policy_chain_settings),
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = if (chain.front.selected.isNotBlank() && chain.landing.selected.isNotBlank()) {
+                        stringResource(
+                            R.string.policy_chain_route,
+                            compactChainNodeLabel(chain.front.selected),
+                            compactChainNodeLabel(chain.landing.selected)
+                        )
+                    } else {
+                        stringResource(R.string.policy_chain_howto)
+                    },
+                    fontSize = 12.sp,
+                    color = colorScheme.onSurfaceVariantSummary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
-            if (expanded) {
-                if (policy.isCustom) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        IconButton(enabled = !busy, onClick = onEditCustom) {
-                            Icon(
-                                Icons.Rounded.Edit,
-                                contentDescription = stringResource(R.string.policy_edit_custom),
-                                tint = colorScheme.onSurfaceVariantActions
-                            )
-                        }
-                        IconButton(enabled = !busy, onClick = onDeleteCustom) {
-                            Icon(
-                                Icons.Rounded.Delete,
-                                contentDescription = stringResource(R.string.policy_delete_custom),
-                                tint = colorScheme.error
-                            )
-                        }
-                    }
-                }
-                val modeItems = buildList {
-                    add("direct" to stringResource(R.string.policy_direct))
-                    add("proxy" to stringResource(R.string.policy_proxy))
-                    // Keep the entry visible so users can discover the feature even when
-                    // the current catalog has no supported landing node.
-                    add("chain" to stringResource(R.string.policy_chain))
-                }
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    modeItems.forEach { (mode, label) ->
-                        TextButton(
-                            text = label,
-                            modifier = Modifier.weight(1f),
-                            enabled = !busy && (mode != "chain" || policy.chainAvailable),
-                            colors = if (policy.mode == mode) ButtonDefaults.textButtonColorsPrimary() else ButtonDefaults.textButtonColors(),
-                            onClick = {
-                                onSelect(
-                                    policy,
-                                    policy.groupId,
-                                    "",
-                                    mode,
-                                    if (mode == "auto") policy.region else ""
-                                )
-                            }
-                        )
-                    }
-                }
-                if (!policy.chainAvailable) {
-                    Text(
-                        stringResource(R.string.policy_chain_unavailable),
-                        color = colorScheme.onSurfaceVariantSummary,
-                        fontSize = 12.sp
-                    )
-                }
-                if (policy.mode == "chain") {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        cornerRadius = 14.dp,
-                        insideMargin = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
-                        colors = CardDefaults.defaultColors(color = colorScheme.surfaceContainer)
-                    ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(
-                                text = stringResource(R.string.policy_chain_howto_title),
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                text = stringResource(R.string.policy_chain_howto),
-                                fontSize = 12.sp,
-                                color = colorScheme.onSurfaceVariantSummary
-                            )
-                            TextButton(
-                                text = stringResource(R.string.policy_chain_configure),
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = ButtonDefaults.textButtonColorsPrimary(),
-                                enabled = !busy && policy.chainAvailable,
-                                onClick = onOpenChain
-                            )
-                            TextButton(
-                                text = stringResource(R.string.policy_restore_node_selection),
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = ButtonDefaults.textButtonColorsPrimary(),
-                                enabled = !busy && group != null,
-                                onClick = onChooseNodes
-                            )
-                        }
-                    }
-                }
-                if (usesNodes) {
-                    if (policy.groups.isNotEmpty()) {
-                        OverlayDropdownPreference(
-                            title = stringResource(R.string.policy_group_picker),
-                            items = policy.groups.map { groupItem ->
-                                if (groupItem.group.id == "default") stringResource(R.string.node_local_config)
-                                else groupItem.group.name
-                            },
-                            selectedIndex = policy.groups.indexOfFirst { it.group.id == policy.groupId }.coerceAtLeast(0),
-                            onSelectedIndexChange = { index ->
-                                policy.groups.getOrNull(index)?.let { selected ->
-                                    val selectedNode = selected.nodes.firstOrNull { it.tag == policy.nodeTag }
-                                    val keepManual = policy.mode == "manual" && selectedNode != null
-                                    val keepRegion = policy.mode == "auto" && policy.region.isNotBlank() &&
-                                        selected.nodes.any { it.region == policy.region }
-                                    onSelect(
-                                        policy,
-                                        selected.group.id,
-                                        if (keepManual) policy.nodeTag else "",
-                                        if (keepManual || keepRegion) policy.mode else "auto",
-                                        if (keepRegion) policy.region else ""
-                                    )
-                                }
-                            }
-                        )
-                    }
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(
-                            text = stringResource(R.string.policy_choose_node),
-                            modifier = Modifier.weight(1f),
-                            enabled = !busy && group != null,
-                            colors = ButtonDefaults.textButtonColorsPrimary(),
-                            onClick = onChooseNodes
-                        )
-                        TextButton(
-                            text = stringResource(if (busy) R.string.policy_testing else R.string.policy_test),
-                            modifier = Modifier.weight(1f),
-                            enabled = !busy && policy.mode != "proxy" && policy.mode != "chain" && group?.nodes?.isNotEmpty() == true,
-                            onClick = { onTest(policy) }
-                        )
-                    }
-                    if (busy) {
-                        PolicyTestingStatus()
-                    } else if (delay != null) {
-                        PolicyTestSummary(delay)
-                    }
-                } else if (policy.mode == "direct") {
-                    TextButton(
-                        text = stringResource(R.string.policy_restore_node_selection),
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.textButtonColorsPrimary(),
-                        enabled = !busy && group != null,
-                        onClick = onChooseNodes
-                    )
-                }
-            }
+            Icon(
+                imageVector = MiuixIcons.ExpandMore,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = colorScheme.onSurfaceVariantActions
+            )
         }
     }
 }
@@ -608,16 +585,22 @@ private fun PolicyCard(
 private fun ChainProxySheet(
     chain: ChainProxyModel,
     busy: Boolean,
-    onSave: (String, String) -> Unit,
+    onSave: (String, String, Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var front by remember(chain.front.selected, chain.landing.selected) { mutableStateOf(chain.front.selected) }
     var landing by remember(chain.front.selected, chain.landing.selected) { mutableStateOf(chain.landing.selected) }
+    var portText by remember(chain.landingPort) {
+        mutableStateOf(if (chain.landingPort > 0) chain.landingPort.toString() else "")
+    }
     val frontItems = chain.front.items
     val landingItems = chain.landing.items
     val frontIndex = frontItems.indexOfFirst { it.tag == front }.coerceAtLeast(0)
     val landingIndex = landingItems.indexOfFirst { it.tag == landing }.coerceAtLeast(0)
-    val duplicate = front.isNotBlank() && front == landing
+    val duplicate = front.isNotBlank() && landing.isNotBlank() &&
+        front == landing.removePrefix("链式落地/")
+    val landingPort = portText.trim().toIntOrNull() ?: 0
+    val portInvalid = portText.trim().isNotBlank() && landingPort !in 1..65535
     var showFrontMenu by remember { mutableStateOf(false) }
     var showLandingMenu by remember { mutableStateOf(false) }
 
@@ -685,6 +668,26 @@ private fun ChainProxySheet(
                     enabled = !busy,
                     onClick = { showLandingMenu = true }
                 )
+                TextField(
+                    value = portText,
+                    onValueChange = { portText = it.filter(Char::isDigit).take(5) },
+                    label = stringResource(R.string.policy_chain_port_label),
+                    enabled = !busy,
+                    maxLines = 1,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (portInvalid) {
+                    Text(
+                        text = stringResource(R.string.policy_chain_port_invalid),
+                        fontSize = 12.sp,
+                        color = colorScheme.error
+                    )
+                }
+                Text(
+                    text = stringResource(R.string.policy_chain_port_hint),
+                    fontSize = 12.sp,
+                    color = colorScheme.onSurfaceVariantSummary
+                )
                 if (duplicate) {
                     Text(stringResource(R.string.policy_chain_same_node), color = colorScheme.error, fontSize = 12.sp)
                 }
@@ -692,8 +695,8 @@ private fun ChainProxySheet(
                     text = stringResource(if (busy) R.string.policy_chain_saving else R.string.policy_chain_save),
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.textButtonColorsPrimary(),
-                    enabled = !busy && front.isNotBlank() && landing.isNotBlank() && !duplicate,
-                    onClick = { onSave(front, landing) }
+                enabled = !busy && front.isNotBlank() && landing.isNotBlank() && !duplicate && !portInvalid,
+                onClick = { onSave(front, landing, landingPort) }
                 )
                 TextButton(
                     text = stringResource(R.string.common_done),
@@ -815,10 +818,111 @@ private fun CustomPolicyEditor(
 private fun PolicyNodePicker(
     policy: PolicyModel,
     groupId: String,
+    chain: ChainProxyModel,
     delay: NodeDelayResult?,
     error: String,
-    columns: Int,
-    itemSize: Int,
+    sortMode: Int,
+    busy: Boolean,
+    onGroupSelected: (String) -> Unit,
+    onSelect: (String, String, String, String) -> Unit,
+    onOpenChain: () -> Unit,
+    onTest: () -> Unit
+) {
+    val group = policy.groups.firstOrNull { it.group.id == groupId } ?: policy.groups.firstOrNull()
+    Column(
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        PolicyModeSegmentedRow(
+            mode = policy.mode,
+            chainAvailable = policy.chainAvailable,
+            busy = busy,
+            onMode = { mode ->
+                onSelect(
+                    group?.group?.id ?: policy.groupId,
+                    "",
+                    mode,
+                    if (mode == "auto") policy.region else ""
+                )
+            }
+        )
+        if (policy.mode == "direct") {
+            Text(
+                text = stringResource(R.string.policy_mode_direct_hint),
+                fontSize = 12.sp,
+                color = colorScheme.onSurfaceVariantSummary
+            )
+        }
+        if (policy.mode == "proxy") {
+            Text(
+                text = stringResource(R.string.policy_mode_proxy_hint),
+                fontSize = 12.sp,
+                color = colorScheme.onSurfaceVariantSummary
+            )
+        }
+        if (policy.mode == "chain") {
+            ChainModeSection(chain = chain, busy = busy, onOpenChain = onOpenChain)
+        }
+        // Node tabs stay reachable from every mode so direct/proxy/chain can
+        // always return to fastest, region or manual selection.
+        NodeSelectionSection(
+            policy = policy,
+            groupId = groupId,
+            delay = delay,
+            error = error,
+            sortMode = sortMode,
+            busy = busy,
+            onGroupSelected = onGroupSelected,
+            onSelect = onSelect,
+            onTest = onTest
+        )
+    }
+}
+
+@Composable
+private fun ChainModeSection(
+    chain: ChainProxyModel,
+    busy: Boolean,
+    onOpenChain: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (!chain.available) {
+            Text(
+                stringResource(R.string.policy_chain_unavailable),
+                color = colorScheme.onSurfaceVariantSummary,
+                fontSize = 12.sp
+            )
+        } else {
+            Text(
+                text = if (chain.front.selected.isNotBlank() && chain.landing.selected.isNotBlank()) {
+                    stringResource(
+                        R.string.policy_chain_route,
+                        compactChainNodeLabel(chain.front.selected),
+                        compactChainNodeLabel(chain.landing.selected)
+                    )
+                } else {
+                    stringResource(R.string.policy_chain_howto)
+                },
+                fontSize = 12.sp,
+                color = colorScheme.onSurfaceVariantSummary
+            )
+            TextButton(
+                text = stringResource(R.string.policy_chain_configure),
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.textButtonColorsPrimary(),
+                enabled = !busy,
+                onClick = onOpenChain
+            )
+        }
+    }
+}
+
+@Composable
+private fun NodeSelectionSection(
+    policy: PolicyModel,
+    groupId: String,
+    delay: NodeDelayResult?,
+    error: String,
     sortMode: Int,
     busy: Boolean,
     onGroupSelected: (String) -> Unit,
@@ -889,32 +993,38 @@ private fun PolicyNodePicker(
                     onClick = if (!busy) ({ showGroupMenu = true }) else null
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = stringResource(R.string.policy_group_picker),
-                            fontSize = 12.sp,
-                            color = colorScheme.onSurfaceVariantSummary
-                        )
-                        Text(
-                            text = group?.group?.name.orEmpty().ifBlank { stringResource(R.string.node_local_config) },
-                            modifier = Modifier.weight(1f).padding(start = 8.dp),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            fontSize = 14.sp
-                        )
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                            Text(
+                                text = stringResource(R.string.policy_group_picker),
+                                fontSize = 11.sp,
+                                color = colorScheme.onSurfaceVariantSummary,
+                                maxLines = 1
+                            )
+                            Text(
+                                text = group?.group?.name.orEmpty().ifBlank { stringResource(R.string.node_local_config) },
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                fontSize = 14.sp
+                            )
+                        }
+                        val nodeCount = group?.nodes?.size ?: 0
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(colorScheme.primary.copy(alpha = 0.12f))
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.node_count, nodeCount),
+                                fontSize = 11.sp,
+                                color = colorScheme.primary,
+                                maxLines = 1
+                            )
+                        }
                         Icon(MiuixIcons.ExpandMore, contentDescription = null, modifier = Modifier.size(20.dp))
                     }
                 }
             }
-            CompactAction(
-                text = stringResource(if (busy) R.string.policy_testing else R.string.policy_test),
-                enabled = !busy && policy.mode != "proxy" && policy.mode != "chain" && group?.nodes?.isNotEmpty() == true,
-                onClick = onTest
-            )
-        }
-        if (busy) {
-            PolicyTestingStatus()
-        } else if (delay != null) {
-            PolicyTestSummary(delay)
         }
         if (error.isNotBlank()) {
             Text(
@@ -930,18 +1040,15 @@ private fun PolicyNodePicker(
         } else {
             val allNodes = policyNodes(group, delay, sortMode)
             val regions = groupNodesByRegion(allNodes)
-            PickerModeSegmented(
+            PickerModeTabs(
                 mode = selectionMode,
+                regionCount = regions.size,
+                nodeCount = allNodes.size,
                 enabled = !busy,
                 onModeChange = { selectionMode = it }
             )
             when (selectionMode) {
                 "global" -> {
-                    Text(
-                        text = stringResource(R.string.policy_global_auto_hint),
-                        fontSize = 12.sp,
-                        color = colorScheme.onSurfaceVariantSummary
-                    )
                     SelectionSummaryCard(
                         title = stringResource(R.string.policy_global_auto),
                         summary = stringResource(R.string.policy_global_auto_hint),
@@ -949,13 +1056,15 @@ private fun PolicyNodePicker(
                         enabled = !busy,
                         onClick = { onSelect(group.group.id, "", "auto", "") }
                     )
+                    Spacer(Modifier.height(8.dp))
+                    PickerTestFooter(
+                        busy = busy,
+                        delay = delay,
+                        enabled = !busy && policy.mode != "proxy" && policy.mode != "chain" && group.nodes.isNotEmpty(),
+                        onTest = onTest
+                    )
                 }
                 "region" -> {
-                    Text(
-                        text = stringResource(R.string.policy_region_auto_hint),
-                        fontSize = 12.sp,
-                        color = colorScheme.onSurfaceVariantSummary
-                    )
                     LazyColumn(
                         modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp),
                         contentPadding = PaddingValues(bottom = 12.dp),
@@ -970,6 +1079,13 @@ private fun PolicyNodePicker(
                             )
                         }
                     }
+                    Spacer(Modifier.height(8.dp))
+                    PickerTestFooter(
+                        busy = busy,
+                        delay = delay,
+                        enabled = !busy && policy.mode != "proxy" && policy.mode != "chain" && group.nodes.isNotEmpty(),
+                        onTest = onTest
+                    )
                 }
                 else -> {
                     CompactSearchField(
@@ -1005,6 +1121,13 @@ private fun PolicyNodePicker(
                             }
                         }
                     }
+                    Spacer(Modifier.height(8.dp))
+                    PickerTestFooter(
+                        busy = busy,
+                        delay = delay,
+                        enabled = !busy && policy.mode != "proxy" && policy.mode != "chain" && group.nodes.isNotEmpty(),
+                        onTest = onTest
+                    )
                 }
             }
         }
@@ -1012,38 +1135,76 @@ private fun PolicyNodePicker(
 }
 
 @Composable
-private fun PickerModeSegmented(
+private fun PickerTestFooter(
+    busy: Boolean,
+    delay: NodeDelayResult?,
+    enabled: Boolean,
+    onTest: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        TextButton(
+            text = stringResource(if (busy) R.string.policy_testing else R.string.policy_test),
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.textButtonColorsPrimary(),
+            enabled = enabled,
+            onClick = onTest
+        )
+        if (busy) {
+            PolicyTestingStatus()
+        } else if (delay != null) {
+            PolicyTestSummary(delay)
+        }
+    }
+}
+
+@Composable
+private fun PickerModeTabs(
     mode: String,
+    regionCount: Int,
+    nodeCount: Int,
     enabled: Boolean,
     onModeChange: (String) -> Unit,
 ) {
+    val tabs = listOf(
+        Triple("global", stringResource(R.string.policy_tab_fastest), null as String?),
+        Triple("region", stringResource(R.string.policy_region_auto), regionCount.toString()),
+        Triple("manual", stringResource(R.string.policy_manual), nodeCount.toString()),
+    )
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        listOf(
-            "global" to stringResource(R.string.policy_global_auto),
-            "region" to stringResource(R.string.policy_region_auto),
-            "manual" to stringResource(R.string.policy_manual)
-        ).forEach { (value, label) ->
-            Box(
+        tabs.forEach { (value, label, badge) ->
+            val selected = mode == value
+            val background = if (selected) colorScheme.primary.copy(alpha = 0.16f)
+                else colorScheme.surfaceContainer
+            val borderColor = if (selected) colorScheme.primary
+                else colorScheme.outline.copy(alpha = 0.35f)
+            val contentColor = if (selected) colorScheme.primary
+                else colorScheme.onSurfaceVariantActions
+            Row(
                 modifier = Modifier
                     .weight(1f)
                     .height(40.dp)
                     .clip(RoundedCornerShape(14.dp))
-                    .background(if (mode == value) colorScheme.primary.copy(alpha = 0.2f) else colorScheme.surfaceContainer)
-                    .border(
-                        1.dp,
-                        if (mode == value) colorScheme.primary else colorScheme.outline.copy(alpha = 0.35f),
-                        RoundedCornerShape(14.dp)
-                    )
+                    .background(background)
+                    .border(1.dp, borderColor, RoundedCornerShape(14.dp))
                     .clickable(enabled = enabled) { onModeChange(value) },
-                contentAlignment = Alignment.Center
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = label,
                     fontSize = 12.sp,
-                    color = if (mode == value) colorScheme.primary else colorScheme.onSurfaceVariantActions,
+                    color = contentColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                if (badge != null) {
+                    Text(
+                        text = " $badge",
+                        fontSize = 11.sp,
+                        color = if (selected) colorScheme.primary else colorScheme.onSurfaceVariantSummary,
+                        maxLines = 1
+                    )
+                }
             }
         }
     }
@@ -1098,57 +1259,22 @@ private fun RegionSelectionRow(
                     color = colorScheme.onSurfaceVariantSummary
                 )
             }
-            Text(
-                text = stringResource(if (selected) R.string.policy_region_selected else R.string.policy_region_auto),
-                fontSize = 12.sp,
-                color = if (selected) colorScheme.primary else colorScheme.onSurfaceVariantActions
-            )
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Rounded.Check,
+                    contentDescription = stringResource(R.string.policy_region_selected),
+                    tint = colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+            } else {
+                Icon(
+                    imageVector = MiuixIcons.ExpandMore,
+                    contentDescription = null,
+                    tint = colorScheme.onSurfaceVariantActions,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         }
-    }
-}
-
-@Composable
-private fun RegionChip(
-    text: String,
-    selected: Boolean,
-    enabled: Boolean,
-    onClick: () -> Unit,
-) {
-    val shape = RoundedCornerShape(20.dp)
-    Box(
-        modifier = Modifier
-            .height(40.dp)
-            .clip(shape)
-            .background(if (selected) colorScheme.primary.copy(alpha = 0.22f) else colorScheme.surfaceContainer)
-            .border(1.dp, if (selected) colorScheme.primary else colorScheme.outline.copy(alpha = 0.4f), shape)
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 12.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = text,
-            color = if (selected) colorScheme.primary else colorScheme.onSurface,
-            fontSize = 13.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-    }
-}
-
-@Composable
-private fun CompactAction(text: String, enabled: Boolean, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(14.dp)
-    Box(
-        modifier = Modifier
-            .height(44.dp)
-            .clip(shape)
-            .background(if (enabled) colorScheme.surfaceContainer else colorScheme.surfaceContainer.copy(alpha = 0.55f))
-            .border(1.dp, colorScheme.outline.copy(alpha = 0.45f), shape)
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 16.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(text, fontSize = 14.sp, color = if (enabled) colorScheme.onSurface else colorScheme.onSurfaceVariantSummary)
     }
 }
 
@@ -1241,22 +1367,74 @@ private fun PolicyIcon(policy: PolicyModel) {
 }
 
 @Composable
-private fun RuntimeBadge(synced: Boolean) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Box(
-            modifier = Modifier
-                .size(7.dp)
-                .clip(CircleShape)
-                .background(if (synced) Color(0xFF32A852) else colorScheme.onSurfaceVariantSummary)
-        )
-        Text(
-            stringResource(if (synced) R.string.policy_runtime_active else R.string.policy_runtime_inactive),
-            fontSize = 12.sp,
-            color = colorScheme.onSurfaceVariantSummary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
+private fun PolicyModeSegmentedRow(
+    mode: String,
+    chainAvailable: Boolean,
+    busy: Boolean,
+    onMode: (String) -> Unit,
+) {
+    val items = listOf(
+        Triple("direct", Icons.Rounded.Block, stringResource(R.string.policy_direct)),
+        Triple("proxy", Icons.Rounded.Shuffle, stringResource(R.string.policy_proxy)),
+        Triple("chain", Icons.Rounded.Hub, stringResource(R.string.policy_chain)),
+    )
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        items.forEach { (value, icon, label) ->
+            val selected = mode == value
+            val enabled = !busy && (value != "chain" || chainAvailable)
+            val background = when {
+                selected -> colorScheme.primary.copy(alpha = 0.16f)
+                else -> colorScheme.surfaceContainer
+            }
+            val borderColor = when {
+                selected -> colorScheme.primary
+                else -> colorScheme.outline.copy(alpha = 0.35f)
+            }
+            val contentColor = when {
+                selected -> colorScheme.primary
+                enabled -> colorScheme.onSurfaceVariantActions
+                else -> colorScheme.onSurfaceVariantSummary
+            }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(64.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(background)
+                    .border(1.dp, borderColor, RoundedCornerShape(16.dp))
+                    .clickable(enabled = enabled) { onMode(value) },
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = contentColor,
+                    modifier = Modifier.size(22.dp)
+                )
+                Text(
+                    text = label,
+                    fontSize = 12.sp,
+                    color = contentColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 4.dp, start = 4.dp, end = 4.dp)
+                )
+            }
+        }
     }
+}
+
+@Composable
+private fun RuntimeDot(synced: Boolean) {
+    val description = stringResource(if (synced) R.string.policy_runtime_active else R.string.policy_runtime_inactive)
+    Box(
+        modifier = Modifier
+            .size(9.dp)
+            .semantics { contentDescription = description }
+            .clip(CircleShape)
+            .background(if (synced) Color(0xFF32A852) else colorScheme.onSurfaceVariantSummary)
+    )
 }
 
 private fun policyNodes(
@@ -1330,39 +1508,6 @@ private fun regionTitle(key: String): String = when (key) {
     "tr" -> "🇹🇷 土耳其"
     "ru" -> "🇷🇺 俄罗斯"
     else -> "other"
-}
-
-@Composable
-private fun NodeRegionHeader(
-    title: String,
-    count: Int,
-    enabled: Boolean,
-    bestNode: CatalogNode?,
-    selected: Boolean,
-    onAutoSelect: (CatalogNode) -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = if (title == "other") stringResource(R.string.policy_region_other) else title,
-            modifier = Modifier.weight(1f),
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Medium,
-            color = colorScheme.onSurfaceVariantActions
-        )
-        TextButton(
-            text = stringResource(if (selected) R.string.policy_region_selected else R.string.policy_region_auto),
-            enabled = enabled && bestNode != null,
-            onClick = { bestNode?.let(onAutoSelect) }
-        )
-        Text(
-            text = stringResource(R.string.node_count, count),
-            fontSize = 12.sp,
-            color = colorScheme.onSurfaceVariantSummary
-        )
-    }
 }
 
 @Composable

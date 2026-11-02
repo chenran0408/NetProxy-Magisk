@@ -42,6 +42,7 @@ internal data class PolicySaveResponse(
 internal data class ChainProxyModel(
     val available: Boolean = false,
     val running: Boolean = false,
+    @SerialName("landing_port") val landingPort: Int = 0,
     val front: ChainSelector = ChainSelector(),
     val landing: ChainSelector = ChainSelector(),
 )

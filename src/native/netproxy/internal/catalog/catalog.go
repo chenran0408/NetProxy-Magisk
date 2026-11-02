@@ -379,12 +379,14 @@ func BuildRuntime(ctx context.Context, options RuntimeOptions) (RuntimeResult, e
 		return RuntimeResult{}, err
 	}
 	defer release()
+	landingPort := 0
 	if options.ModuleConfig != "" {
 		module, err := moduleconfig.LoadModule(options.ModuleConfig)
 		if err != nil {
 			return RuntimeResult{}, fmt.Errorf("读取 module.json 失败: %w", err)
 		}
 		options.Selection = module.Selection
+		landingPort = module.Chain.LandingPort
 	}
 	groups, err := loadGroups(ctx, options.Root, false)
 	if err != nil {
@@ -421,8 +423,8 @@ func BuildRuntime(ctx context.Context, options RuntimeOptions) (RuntimeResult, e
 		return RuntimeResult{}, errors.New("Catalog 元数据与 Provider 节点数量不一致")
 	}
 
-	landingOutput := chainLandingOutputPath(options.ProvidersOutput)
-	chain, err := buildChainRuntime(ctx, groups, landingOutput)
+		landingOutput := ChainLandingOutputPath(options.ProvidersOutput)
+	chain, err := buildChainRuntime(ctx, groups, landingOutput, landingPort)
 	if err != nil {
 		return RuntimeResult{}, err
 	}

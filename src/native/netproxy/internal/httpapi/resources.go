@@ -18,6 +18,7 @@ import (
 	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/contract"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/module"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/policy"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
@@ -96,7 +97,7 @@ type policyView struct {
 }
 
 func (s *Server) policyPath() string {
-	return filepath.Join(filepath.Dir(s.options.StateFile), "policies.json")
+	return paths.New(s.options.ModuleDir).Policies()
 }
 
 func (s *Server) readPolicies(ctx context.Context, r *http.Request) (contract.Result, error) {
@@ -401,17 +402,22 @@ type chainSelectorView struct {
 }
 
 type chainView struct {
-	Available bool              `json:"available"`
-	Running   bool              `json:"running"`
-	Front     chainSelectorView `json:"front"`
-	Landing   chainSelectorView `json:"landing"`
+	Available   bool              `json:"available"`
+	Running     bool              `json:"running"`
+	LandingPort int               `json:"landing_port"`
+	Front       chainSelectorView `json:"front"`
+	Landing     chainSelectorView `json:"landing"`
 }
 
 func (s *Server) readChain(ctx context.Context, r *http.Request) (contract.Result, error) {
 	if _, err := resourceQuery(r); err != nil {
 		return contract.Result{}, err
 	}
-	data := chainView{Available: policyChainAvailable(s.options.RuntimeDir)}
+	config, err := moduleconfig.LoadModule(s.options.ModuleConfig)
+	if err != nil {
+		return contract.Result{}, err
+	}
+	data := chainView{Available: policyChainAvailable(s.options.RuntimeDir), LandingPort: config.Chain.LandingPort}
 	if !data.Available || !service.ProcessRunning(s.options.SingBoxPath) {
 		return contract.Success("chain.current", "链式代理设置", data), nil
 	}
@@ -433,8 +439,9 @@ func (s *Server) readChain(ctx context.Context, r *http.Request) (contract.Resul
 
 func (s *Server) saveChain(ctx context.Context, r *http.Request) (contract.Result, error) {
 	var input struct {
-		Front   string `json:"front"`
-		Landing string `json:"landing"`
+		Front       string `json:"front"`
+		Landing     string `json:"landing"`
+		LandingPort int    `json:"landing_port"`
 	}
 	if err := resourceDecode(r, &input); err != nil {
 		return contract.Result{}, err
@@ -444,8 +451,8 @@ func (s *Server) saveChain(ctx context.Context, r *http.Request) (contract.Resul
 	if input.Front == "" || input.Landing == "" {
 		return contract.Result{}, invalid("链式代理必须选择前置和落地节点")
 	}
-	if input.Front == input.Landing {
-		return contract.Result{}, invalid("前置和落地节点不能相同")
+	if input.LandingPort < 0 || input.LandingPort > 65535 {
+		return contract.Result{}, invalid("后置端口必须是 0-65535 之间的整数，0 表示使用节点原端口")
 	}
 	if !policyChainAvailable(s.options.RuntimeDir) {
 		return contract.Result{}, invalid("链式代理当前不可用，请先准备至少一个支持链式落地的节点")
@@ -462,8 +469,21 @@ func (s *Server) saveChain(ctx context.Context, r *http.Request) (contract.Resul
 	if !frontOK || !landingOK {
 		return contract.Result{}, invalid("链式代理节点不存在或已失效，请刷新后重试")
 	}
-	if front.Tag == landing.Tag {
+	if front.Tag == chainLandingNodeTag(landing.Tag) {
 		return contract.Result{}, invalid("前置和落地节点不能相同")
+	}
+	current, err := moduleconfig.LoadModule(s.options.ModuleConfig)
+	if err != nil {
+		return contract.Result{}, err
+	}
+	if current.Chain.LandingPort != input.LandingPort {
+		// 端口覆写改变落地副本的连接设置，必须重新生成运行时并重启核心。
+		if err := moduleconfig.UpdateChainLandingPort(ctx, s.options.ModuleConfig, input.LandingPort); err != nil {
+			return contract.Result{}, err
+		}
+		if _, err := module.ManageService(ctx, s.options, "reload"); err != nil {
+			return contract.Result{}, err
+		}
 	}
 	if err := service.SelectOutbound(ctx, s.controlOptions(), catalog.ChainFrontTag, front.Tag); err != nil {
 		return contract.Result{}, err
@@ -472,11 +492,18 @@ func (s *Server) saveChain(ctx context.Context, r *http.Request) (contract.Resul
 		return contract.Result{}, err
 	}
 	return contract.Success("chain.saved", "链式代理设置已保存", chainView{
-		Available: true,
-		Running:   true,
+		Available:   true,
+		Running:     true,
+		LandingPort: input.LandingPort,
 		Front:     chainSelectorView{Tag: catalog.ChainFrontTag, Selected: front.Tag, Items: chainGroupItems(groups, catalog.ChainFrontTag)},
 		Landing:   chainSelectorView{Tag: catalog.ChainOutboundTag, Selected: landing.Tag, Items: chainGroupItems(groups, catalog.ChainOutboundTag)},
 	}), nil
+}
+
+// chainLandingNodeTag strips the landing provider namespace so front and
+// landing selections compare by the underlying node tag.
+func chainLandingNodeTag(tag string) string {
+	return strings.TrimPrefix(tag, catalog.ChainLandingProviderTag+"/")
 }
 
 func chainGroupItem(groups []serviceapi.Group, tag, itemTag string) (serviceapi.GroupItem, bool) {

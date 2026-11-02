@@ -9,19 +9,27 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.AltRoute
+import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -31,6 +39,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -222,5 +231,82 @@ internal fun InfoRow(title: String, content: String, icon: ImageVector) {
             style = MiuixTheme.textStyles.body2,
             color = colorScheme.onSurfaceVariantActions
         )
+    }
+}
+
+/** 出站模式：以图标网格代替下拉，模式含义可扫读。 */
+@Composable
+internal fun DashboardModeGrid(
+    modes: List<String>,
+    selectedMode: String,
+    enabled: Boolean,
+    onSelect: (String) -> Unit,
+) {
+    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.AltRoute,
+                contentDescription = null,
+                tint = colorScheme.primary,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(Modifier.width(12.dp))
+            Text(
+                text = stringResource(R.string.dashboard_outbound_mode),
+                style = MiuixTheme.textStyles.body1
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+        val chunked = modes.chunked(2)
+        chunked.forEachIndexed { rowIndex, rowModes ->
+            if (rowIndex > 0) Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                rowModes.forEach { mode ->
+                    val selected = mode == selectedMode
+                    val (icon, label) = when (mode) {
+                        "Rule" -> Icons.AutoMirrored.Rounded.AltRoute to
+                            stringResource(R.string.dashboard_mode_rule)
+                        "Proxy" -> Icons.Rounded.Shuffle to
+                            stringResource(R.string.dashboard_mode_proxy)
+                        "Direct" -> Icons.Rounded.Block to
+                            stringResource(R.string.dashboard_mode_direct)
+                        "RuleAllowAds" -> Icons.Rounded.Public to
+                            stringResource(R.string.dashboard_mode_rule_allow_ads)
+                        else -> Icons.Rounded.Public to mode
+                    }
+                    val background = if (selected) colorScheme.primary.copy(alpha = 0.16f)
+                        else colorScheme.surfaceContainer
+                    val borderColor = if (selected) colorScheme.primary
+                        else colorScheme.outline.copy(alpha = 0.35f)
+                    val contentColor = if (selected) colorScheme.primary
+                        else colorScheme.onSurfaceVariantActions
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(background)
+                            .border(1.dp, borderColor, RoundedCornerShape(14.dp))
+                            .clickable(enabled = enabled) { onSelect(mode) }
+                            .padding(horizontal = 12.dp, vertical = 12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            tint = contentColor,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = label,
+                            style = MiuixTheme.textStyles.body2,
+                            color = contentColor,
+                            maxLines = 1
+                        )
+                    }
+                }
+                if (rowModes.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
     }
 }

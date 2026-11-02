@@ -22,6 +22,7 @@ type ModuleConfig struct {
 	AutoStart bool `json:"auto_start"`
 	Selection `json:"selection"`
 	WiFi      WiFiPolicy `json:"wifi"`
+	Chain     ChainConfig `json:"chain"`
 }
 
 type Selection struct {
@@ -35,6 +36,13 @@ type WiFiPolicy struct {
 	Blacklist      []string `json:"blacklist"`
 	Whitelist      []string `json:"whitelist"`
 	ProxyOnNonWiFi bool     `json:"proxy_on_non_wifi"`
+}
+
+// ChainConfig 保存链式代理的连接偏好。
+type ChainConfig struct {
+	// LandingPort 覆写链式落地副本的连接端口；0 表示使用节点原端口。
+	// 部分订阅要求落地端口低于 10000 才允许链式，因此必须允许用户改写。
+	LandingPort int `json:"landing_port"`
 }
 
 func (policy WiFiPolicy) Equal(other WiFiPolicy) bool {
@@ -103,6 +111,9 @@ func ParseModule(content []byte) (ModuleConfig, error) {
 }
 
 func (config ModuleConfig) validate() error {
+	if config.Chain.LandingPort < 0 || config.Chain.LandingPort > 65535 {
+		return errors.New("chain.landing_port 必须是 0-65535 之间的整数")
+	}
 	if config.SelectedNodeTag != "" && (config.ActiveGroupID == "" || strings.TrimSpace(config.SelectedNodeTag) == "") {
 		return errors.New("手动选择必须指定活动分组和有效节点 tag")
 	}
@@ -143,6 +154,14 @@ func UpdateSelection(ctx context.Context, path string, selection Selection) erro
 	return editor.UpdateSelection(selection)
 }
 
+func UpdateChainLandingPort(ctx context.Context, path string, port int) error {
+	editor, err := Lock(ctx, path)
+	if err != nil {
+		return err
+	}
+	defer editor.Release()
+	return editor.UpdateChainLandingPort(port)
+}
 // Editor 在显式持有文件锁期间完成配置读改写。
 type Editor struct {
 	path string
@@ -182,7 +201,38 @@ func (editor *Editor) UpdateSelection(selection Selection) error {
 	if err != nil {
 		return err
 	}
-	content, err = json.Marshal(fields, json.Deterministic(true), jsontext.WithIndent("  "))
+	return editor.write(fields)
+}
+
+func (editor *Editor) UpdateChainLandingPort(port int) error {
+	content, err := os.ReadFile(editor.path)
+	if err != nil {
+		return err
+	}
+	config, err := ParseModule(content)
+	if err != nil {
+		return err
+	}
+	if config.Chain.LandingPort == port {
+		return nil
+	}
+	config.Chain.LandingPort = port
+	if err := config.validate(); err != nil {
+		return err
+	}
+	var fields map[string]jsontext.Value
+	if err := json.Unmarshal(content, &fields); err != nil {
+		return err
+	}
+	fields["chain"], err = json.Marshal(config.Chain, json.Deterministic(true))
+	if err != nil {
+		return err
+	}
+	return editor.write(fields)
+}
+
+func (editor *Editor) write(fields map[string]jsontext.Value) error {
+	updated, err := json.Marshal(fields, json.Deterministic(true), jsontext.WithIndent("  "))
 	if err != nil {
 		return err
 	}
@@ -191,7 +241,7 @@ func (editor *Editor) UpdateSelection(selection Selection) error {
 		return err
 	}
 	defer os.Remove(temporary.Name())
-	if _, err := temporary.Write(append(content, '\n')); err != nil {
+	if _, err := temporary.Write(append(updated, '\n')); err != nil {
 		_ = temporary.Close()
 		return err
 	}

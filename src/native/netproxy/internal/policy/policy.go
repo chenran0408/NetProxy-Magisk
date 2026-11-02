@@ -186,7 +186,7 @@ func Validate(value Policy) error {
 // BuildRuntime writes only route rules. Provider and outbound definitions stay
 // owned by Catalog, while this overlay is passed to sing-box as another -c
 // source during service start/check.
-func BuildRuntime(ctx context.Context, path, catalogRoot string, policies []Policy) (bool, error) {
+func BuildRuntime(ctx context.Context, path, catalogRoot, chainLanding string, policies []Policy) (bool, error) {
 	groups, err := catalog.Scan(ctx, catalog.ScanOptions{Root: catalogRoot, Type: "all", WithNodes: true})
 	if err != nil {
 		return false, err
@@ -210,8 +210,10 @@ func BuildRuntime(ctx context.Context, path, catalogRoot string, policies []Poli
 		},
 	}
 	chainAvailable := false
-	if _, err := os.Stat(filepath.Join(filepath.Dir(path), "chain-landing.json")); err == nil {
-		chainAvailable = true
+	if chainLanding != "" {
+		if _, err := os.Stat(chainLanding); err == nil {
+			chainAvailable = true
+		}
 	}
 	for _, item := range policies {
 		target := item.RuntimeTag
