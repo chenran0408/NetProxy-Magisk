@@ -179,6 +179,26 @@ func TestStartedAtWithoutGRPCStatusFrame(t *testing.T) {
 	}
 }
 
+func TestEmptyUnaryResponseForEmptyMessage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != methodSelectOutbound {
+			http.Error(writer, "unexpected method", http.StatusNotFound)
+			return
+		}
+		writer.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client, err := New(server.URL, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	if err := client.Select(t.Context(), "Proxy", "Auto/fixture"); err != nil {
+		t.Fatalf("空的 emptyMessage 响应应视为成功: %v", err)
+	}
+}
+
 func TestStatusOverGRPCWeb(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.URL.Path != methodSubscribeStatus {
