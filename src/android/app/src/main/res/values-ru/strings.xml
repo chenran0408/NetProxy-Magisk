@@ -154,6 +154,8 @@
     <string name="node_delete">Удалить узел</string>
     <string name="node_auto_fastest">Авто — быстрее</string>
     <string name="node_auto_test">Автопроверка</string>
+    <string name="node_region_count">%1$d узлов</string>
+    <string name="node_switched_region">Автовыбор региона %1$s включён</string>
     <string name="node_group_empty">В этой группе нет узлов</string>
     <string name="node_local_config">Локальная конфигурация</string>
     <string name="node_count">Узлов: %1$d</string>

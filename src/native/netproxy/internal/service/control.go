@@ -98,6 +98,7 @@ type Selection struct {
 	ActiveGroupName       string `json:"active_group_name"`
 	ActiveGroupRuntimeTag string `json:"active_group_runtime_tag"`
 	ActiveGroupNodeCount  int    `json:"active_group_node_count"`
+	ActiveRegion          string `json:"active_region,omitempty"`
 	SelectorMode          string `json:"selector_mode"`
 	SelectedNodeRef       string `json:"selected_node_ref"`
 	Selected              string `json:"selected"`
@@ -665,6 +666,7 @@ func SelectionFromRuntimeGroups(module moduleconfig.ModuleConfig, groups []catal
 		ActiveGroupID:   module.ActiveGroupID,
 		SelectorMode:    module.Mode(),
 		SelectedNodeRef: module.Ref(),
+		ActiveRegion:    module.Region,
 	}
 	for _, group := range groups {
 		if group.Group.ID != module.ActiveGroupID {

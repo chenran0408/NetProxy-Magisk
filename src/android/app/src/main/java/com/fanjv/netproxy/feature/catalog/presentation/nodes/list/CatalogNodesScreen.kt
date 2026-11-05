@@ -282,6 +282,7 @@ internal fun CatalogNodesScreen(
                         CatalogNodeGrid(
                             group = selectedGroup,
                             activeGroupId = state.selection.activeGroupId,
+                            selectedRegion = state.selection.region,
                             selectedRef = state.selection.selected,
                             selectorMode = state.selection.selectorMode,
                             runtimeSelectedNode = selectedAutoNode,
@@ -291,6 +292,8 @@ internal fun CatalogNodesScreen(
                             itemSize = itemSize,
                             sortMode = sortMode,
                             onAuto = { viewModel.useAuto(selectedGroup.group.id) },
+                            onRegion = { viewModel.useRegion(selectedGroup.group.id, it) },
+                            onRegionTest = { viewModel.testRegionDelay(selectedGroup.group.id, it) },
                             onNode = { viewModel.useNode(selectedGroup.group.id, it.tag) },
                             onNodeAction = { actionNode = selectedGroup to it },
                             modifier = Modifier.fillMaxSize(),
@@ -301,6 +304,7 @@ internal fun CatalogNodesScreen(
                         CatalogGroupList(
                             groups = state.groups,
                             activeGroupId = state.selection.activeGroupId,
+                            selectedRegion = state.selection.region,
                             selectedRef = state.selection.selected,
                             selectorMode = state.selection.selectorMode,
                             runtimeSelectedNode = selectedAutoNode,
@@ -321,6 +325,8 @@ internal fun CatalogNodesScreen(
                                 }
                             },
                             onAuto = viewModel::useAuto,
+                            onRegion = viewModel::useRegion,
+                            onRegionTest = viewModel::testRegionDelay,
                             onNode = { group, node -> viewModel.useNode(group.group.id, node.tag) },
                             onNodeAction = { group, node -> actionNode = group to node },
                             modifier = Modifier.fillMaxSize(),

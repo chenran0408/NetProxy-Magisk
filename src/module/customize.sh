@@ -471,7 +471,7 @@ with_user_data_locks() (
 # 参数: 无。
 # 返回: 0=当前事务已恢复且快照完成，1=失败。
 synchronize_user_data() {
-  [ "$INSTALL_MODE" = fresh ] || NETPROXY_MODULE_DIR="$LIVE_DIR" "$LIVE_DIR/netproxyctl" catalog list >/dev/null 2>&1 || return 1
+  [ "$INSTALL_MODE" = fresh ] || NETPROXY_MODULE_DIR="$LIVE_DIR" "$MODPATH/bin/netproxyctl" catalog list >/dev/null 2>&1 || return 1
   with_user_data_locks copy_user_data_locked || return 1
   cleanup_no_telemetry_state
 }
@@ -539,7 +539,7 @@ apply_hot_update() {
   sleep 3
   validate_stage && [ -f "$LIVE_DIR/update" ] || return 1
   stop_proxy_if_running || return 1
-  [ "$INSTALL_MODE" = fresh ] || NETPROXY_MODULE_DIR="$LIVE_DIR" "$LIVE_DIR/netproxyctl" catalog list >/dev/null 2>&1 || return 1
+  [ "$INSTALL_MODE" = fresh ] || NETPROXY_MODULE_DIR="$LIVE_DIR" "$MODPATH/bin/netproxyctl" catalog list >/dev/null 2>&1 || return 1
   with_user_data_locks commit_hot_update || return 1
   write_log INFO success - "后台热更新已完成，无需重启设备"
   SERVICE_STOPPED=true

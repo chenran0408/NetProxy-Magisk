@@ -182,11 +182,14 @@ internal fun CatalogDashboardScreen(
                 item {
                     Card(modifier = Modifier.fillMaxWidth()) {
                         val modeValues = state.availableOutboundModes
-                        DashboardModeGrid(
-                            modes = modeValues,
-                            selectedMode = state.outboundMode,
+                        OverlayDropdownPreference(
+                            title = stringResource(R.string.dashboard_outbound_mode),
+                            items = modeValues.map { dashboardModeLabel(it) },
+                            selectedIndex = modeValues.indexOf(state.outboundMode).coerceAtLeast(0),
                             enabled = availability?.available == true && !state.loading,
-                            onSelect = viewModel::setMode
+                            onSelectedIndexChange = { index ->
+                                modeValues.getOrNull(index)?.let(viewModel::setMode)
+                            }
                         )
                         ArrowPreference(
                             title = stringResource(R.string.dashboard_current_node),

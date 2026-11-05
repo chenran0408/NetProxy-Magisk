@@ -154,6 +154,8 @@
     <string name="node_delete">Delete node</string>
     <string name="node_auto_fastest">Auto-Fastest</string>
     <string name="node_auto_test">Auto test</string>
+    <string name="node_region_count">%1$d nodes</string>
+    <string name="node_switched_region">Automatic selection enabled for %1$s</string>
     <string name="node_group_empty">No nodes in this group</string>
     <string name="node_local_config">Local configuration</string>
     <string name="node_count">%1$d nodes</string>

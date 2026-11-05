@@ -21,13 +21,14 @@ import (
 type ModuleConfig struct {
 	AutoStart bool `json:"auto_start"`
 	Selection `json:"selection"`
-	WiFi      WiFiPolicy `json:"wifi"`
+	WiFi      WiFiPolicy  `json:"wifi"`
 	Chain     ChainConfig `json:"chain"`
 }
 
 type Selection struct {
 	ActiveGroupID   string `json:"group_id"`
 	SelectedNodeTag string `json:"node_tag"`
+	Region          string `json:"region,omitempty"`
 }
 
 type WiFiPolicy struct {
@@ -67,6 +68,9 @@ func (selection Selection) Ref() string {
 
 func (selection Selection) RuntimeTargets(runtimeTag string) (group, node string) {
 	if selection.SelectedNodeTag == "" {
+		if selection.Region != "" {
+			return "Auto/" + runtimeTag + " [" + selection.Region + "]", ""
+		}
 		return "Auto/" + runtimeTag, ""
 	}
 	return "Select/" + runtimeTag, runtimeTag + "/" + selection.SelectedNodeTag
@@ -162,6 +166,7 @@ func UpdateChainLandingPort(ctx context.Context, path string, port int) error {
 	defer editor.Release()
 	return editor.UpdateChainLandingPort(port)
 }
+
 // Editor 在显式持有文件锁期间完成配置读改写。
 type Editor struct {
 	path string

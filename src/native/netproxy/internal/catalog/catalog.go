@@ -265,6 +265,17 @@ func ResolveSelection(ctx context.Context, root string, selection moduleconfig.S
 	if !present {
 		return selection, "", fmt.Errorf("目标分组没有可用节点或未找到手动节点: %s", selection.Ref())
 	}
+	if selection.SelectedNodeTag != "" {
+		selection.Region = ""
+	} else if selection.Region != "" {
+		available, err := groupHasRegion(ctx, groups[index], selection.Region)
+		if err != nil {
+			return selection, "", err
+		}
+		if !available {
+			return selection, "", fmt.Errorf("目标分组没有可用的 %s 地区节点", selection.Region)
+		}
+	}
 	assignRuntimeTags(groups)
 	return selection, groups[index].RuntimeTag, nil
 }
@@ -311,6 +322,17 @@ func normalizeSelection(ctx context.Context, groups []*loadedGroup, selection mo
 				selection.SelectedNodeTag = ""
 			}
 		}
+		if selection.SelectedNodeTag != "" {
+			selection.Region = ""
+		} else if selection.Region != "" {
+			available, err := groupHasRegion(ctx, group, selection.Region)
+			if err != nil {
+				return selection, "", err
+			}
+			if !available {
+				selection.Region = ""
+			}
+		}
 		assignRuntimeTags(groups)
 		return selection, group.RuntimeTag, nil
 	}
@@ -319,6 +341,19 @@ func normalizeSelection(ctx context.Context, groups []*loadedGroup, selection mo
 		selection.ActiveGroupID = "default"
 	}
 	return selection, "", nil
+}
+
+func groupHasRegion(ctx context.Context, group *loadedGroup, region string) (bool, error) {
+	nodes, err := provider.InspectFile(ctx, group.ProviderPath)
+	if err != nil {
+		return false, err
+	}
+	for _, node := range nodes {
+		if RegionKey(node.Tag) == region {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func GroupIDs(ctx context.Context, root, groupType string) ([]string, error) {
@@ -423,7 +458,7 @@ func BuildRuntime(ctx context.Context, options RuntimeOptions) (RuntimeResult, e
 		return RuntimeResult{}, errors.New("Catalog 元数据与 Provider 节点数量不一致")
 	}
 
-		landingOutput := ChainLandingOutputPath(options.ProvidersOutput)
+	landingOutput := ChainLandingOutputPath(options.ProvidersOutput)
 	chain, err := buildChainRuntime(ctx, groups, landingOutput, landingPort)
 	if err != nil {
 		return RuntimeResult{}, err

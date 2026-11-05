@@ -495,8 +495,8 @@ func (s *Server) saveChain(ctx context.Context, r *http.Request) (contract.Resul
 		Available:   true,
 		Running:     true,
 		LandingPort: input.LandingPort,
-		Front:     chainSelectorView{Tag: catalog.ChainFrontTag, Selected: front.Tag, Items: chainGroupItems(groups, catalog.ChainFrontTag)},
-		Landing:   chainSelectorView{Tag: catalog.ChainOutboundTag, Selected: landing.Tag, Items: chainGroupItems(groups, catalog.ChainOutboundTag)},
+		Front:       chainSelectorView{Tag: catalog.ChainFrontTag, Selected: front.Tag, Items: chainGroupItems(groups, catalog.ChainFrontTag)},
+		Landing:     chainSelectorView{Tag: catalog.ChainOutboundTag, Selected: landing.Tag, Items: chainGroupItems(groups, catalog.ChainOutboundTag)},
 	}), nil
 }
 
@@ -720,6 +720,7 @@ func (s *Server) delayNodes(ctx context.Context, r *http.Request) (contract.Resu
 	var input struct {
 		GroupID string `json:"group_id"`
 		NodeTag string `json:"node_tag"`
+		Region  string `json:"region"`
 	}
 	if err := resourceDecode(r, &input); err != nil {
 		return contract.Result{}, err
@@ -734,6 +735,12 @@ func (s *Server) delayNodes(ctx context.Context, r *http.Request) (contract.Resu
 			return contract.Result{}, err
 		}
 		target = runtimeTag + "/" + input.NodeTag
+	} else if input.Region != "" {
+		runtimeTag, err := catalog.RuntimeTag(ctx, s.options.CatalogRoot, input.GroupID)
+		if err != nil {
+			return contract.Result{}, err
+		}
+		target = catalog.RegionAutoTag(runtimeTag, input.Region)
 	}
 	data, err := service.Delay(ctx, s.controlOptions(), target, input.GroupID)
 	return contract.Success("node.delay", "节点测速完成", data), err
@@ -751,6 +758,7 @@ func (s *Server) saveSelection(ctx context.Context, r *http.Request) (contract.R
 	var input struct {
 		GroupID string `json:"group_id"`
 		NodeTag string `json:"node_tag"`
+		Region  string `json:"region"`
 	}
 	if err := resourceDecode(r, &input); err != nil {
 		return contract.Result{}, err
@@ -758,11 +766,15 @@ func (s *Server) saveSelection(ctx context.Context, r *http.Request) (contract.R
 	if err := resourceGroupID(input.GroupID, false); err != nil {
 		return contract.Result{}, err
 	}
-	target := "auto"
+	var data map[string]string
+	var err error
 	if input.NodeTag != "" {
-		target = input.GroupID + "/" + input.NodeTag
+		data, err = module.SelectNode(ctx, s.options, input.GroupID+"/"+input.NodeTag, input.GroupID)
+	} else if input.Region != "" {
+		data, err = module.SelectRegion(ctx, s.options, input.GroupID, input.Region)
+	} else {
+		data, err = module.SelectNode(ctx, s.options, "auto", input.GroupID)
 	}
-	data, err := module.SelectNode(ctx, s.options, target, input.GroupID)
 	return contract.Success("node.selected", "节点选择已更新", data), err
 }
 

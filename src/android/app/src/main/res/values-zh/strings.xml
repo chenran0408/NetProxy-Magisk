@@ -162,6 +162,8 @@
     <string name="node_delete">删除节点</string>
     <string name="node_auto_fastest">自动最快</string>
     <string name="node_auto_test">自动测速</string>
+    <string name="node_region_count">%1$d 个节点</string>
+    <string name="node_switched_region">已启用 %1$s 地区自动选择</string>
     <string name="node_group_empty">该分组暂时没有节点</string>
     <string name="node_local_config">本地配置</string>
     <string name="node_count">%1$d 个节点</string>
