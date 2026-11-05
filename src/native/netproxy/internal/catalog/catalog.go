@@ -636,9 +636,10 @@ func writeRuntimeOutbounds(path string, groups []*loadedGroup, defaultTag string
 			if region == "" || len(tags) == 0 {
 				continue
 			}
+			regionTag := RegionAutoTag(group.RuntimeTag, region)
 			outbounds = append(outbounds, option.Outbound{
 				Type: C.TypeURLTest,
-				Tag:  RegionAutoTag(group.RuntimeTag, region),
+				Tag:  regionTag,
 				Options: &option.URLTestOutboundOptions{
 					Providers:                 []string{group.RuntimeTag},
 					Include:                   regexpToBadOption(RegionIncludeRegex(group.RuntimeTag, tags)),
@@ -648,6 +649,7 @@ func writeRuntimeOutbounds(path string, groups []*loadedGroup, defaultTag string
 					InterruptExistConnections: true,
 				},
 			})
+			options = append(options, regionTag)
 		}
 	}
 	if len(chain) > 0 && chain[0] != nil && len(chain[0].LandingTags) > 0 {
