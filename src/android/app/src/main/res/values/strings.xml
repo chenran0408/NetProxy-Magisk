@@ -124,6 +124,8 @@
     <string name="latency_timeout">Timeout</string>
     <string name="node_test_current_group">Test group latency</string>
     <string name="node_display_settings">Node display</string>
+    <string name="node_region_grouping">Show region groups</string>
+    <string name="node_region_grouping_summary">Show automatic selection cards for each country or region</string>
     <string name="node_empty">No nodes available</string>
     <string name="node_layout_style">Layout</string>
     <string name="node_layout_tabs">Group tabs</string>

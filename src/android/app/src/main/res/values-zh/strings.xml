@@ -132,6 +132,8 @@
     <string name="latency_timeout">超时</string>
     <string name="node_test_current_group">测试当前分组延迟</string>
     <string name="node_display_settings">节点显示设置</string>
+    <string name="node_region_grouping">按国家/地区分组</string>
+    <string name="node_region_grouping_summary">显示各国家或地区的自动选择卡片</string>
     <string name="node_empty">还没有可用节点</string>
     <string name="node_layout_style">布局样式</string>
     <string name="node_layout_tabs">分组标签页</string>

@@ -124,6 +124,8 @@
     <string name="latency_timeout">Тайм-аут</string>
     <string name="node_test_current_group">Проверить задержку группы</string>
     <string name="node_display_settings">Отображение узлов</string>
+    <string name="node_region_grouping">Группы по регионам</string>
+    <string name="node_region_grouping_summary">Показывать карточки автоматического выбора по странам и регионам</string>
     <string name="node_empty">Нет доступных узлов</string>
     <string name="node_layout_style">Вид списка</string>
     <string name="node_layout_tabs">Вкладки групп</string>

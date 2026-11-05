@@ -55,6 +55,7 @@ internal fun CatalogNodeGrid(
     columns: Int,
     itemSize: Int,
     sortMode: Int,
+    showRegionGroups: Boolean,
     onAuto: () -> Unit,
     onRegion: (String) -> Unit,
     onRegionTest: (String) -> Unit,
@@ -69,8 +70,12 @@ internal fun CatalogNodeGrid(
     val sortedNodes = remember(group.nodes, sortMode, latencies) {
         sortCatalogNodes(group.nodes, sortMode, group.group.id, latencies)
     }
-    val regions = remember(group.nodes) {
-        group.nodes.map { it.region }.filter(String::isNotBlank).distinct()
+    val regions = remember(group.nodes, showRegionGroups) {
+        if (showRegionGroups) {
+            group.nodes.map { it.region }.filter(String::isNotBlank).distinct()
+        } else {
+            emptyList()
+        }
     }
     val spacing = if (columns == 3) 8.dp else 10.dp
     LazyVerticalGrid(
@@ -156,6 +161,7 @@ internal fun CatalogGroupList(
     columns: Int,
     itemSize: Int,
     sortMode: Int,
+    showRegionGroups: Boolean,
     expandedGroups: Set<String>,
     onToggleGroup: (String) -> Unit,
     onAuto: (String) -> Unit,
@@ -196,7 +202,11 @@ internal fun CatalogGroupList(
                 }
             }
             if (expanded && group.nodes.isNotEmpty()) {
-                val regions = group.nodes.map { it.region }.filter(String::isNotBlank).distinct()
+                val regions = if (showRegionGroups) {
+                    group.nodes.map { it.region }.filter(String::isNotBlank).distinct()
+                } else {
+                    emptyList()
+                }
                 val entries = listOf<NodeListEntry>(NodeListEntry.GlobalAuto) +
                     regions.map { NodeListEntry.RegionAuto(it) } +
                     sortCatalogNodes(group.nodes, sortMode, groupId, latencies).map(NodeListEntry::Node)
