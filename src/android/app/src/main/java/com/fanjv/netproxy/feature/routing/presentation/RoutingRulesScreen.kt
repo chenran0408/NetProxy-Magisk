@@ -195,7 +195,7 @@ internal fun RoutingRulesScreen(
             Column(Modifier.heightIn(max = 500.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (draft.index == null) OverlayDropdownPreference(title = stringResource(R.string.routing_type),
+                    if (draft.field != null) OverlayDropdownPreference(title = stringResource(R.string.routing_type),
                         items = LocalRuleSet.entries.map { stringResource(it.title()) }, selectedIndex = draft.target.ordinal,
                         enabled = !state.isSaving,
                         insideMargin = PaddingValues(vertical = 12.dp),

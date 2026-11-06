@@ -133,7 +133,7 @@ class RoutingRulesViewModelTest {
         assertFalse(transport.calls.any { it.path != "/config" })
     }
 
-    @Test fun editingAndDeletingUseFileIdentityAndCannotMoveExistingRules() = runBlocking {
+    @Test fun editingCanMoveExistingRulesBetweenTypesAndDeletingKeepsFileIdentity() = runBlocking {
         val transport = Transport()
         transport.contents[LocalRuleSet.Proxy.target] = """{"version":1,"rules":[{"domain":"proxy.example"}]}"""
         transport.revisions[LocalRuleSet.Direct.target] = "direct-revision"
@@ -145,20 +145,21 @@ class RoutingRulesViewModelTest {
         vm.edit(direct)
         assertEquals("example.com", vm.state.value.draft!!.text)
         vm.selectTarget(LocalRuleSet.Block)
-        assertEquals(LocalRuleSet.Direct, vm.state.value.draft!!.target)
+        assertEquals(LocalRuleSet.Block, vm.state.value.draft!!.target)
         vm.updateDraft(RuleField.Domain, "direct.example")
         vm.save()
         val saved = vm.saved()
-        assertEquals("direct.example", saved.file(LocalRuleSet.Direct).document!!.rules[0].simpleRule()!!.values.single())
-        assertEquals(advanced, saved.file(LocalRuleSet.Direct).document!!.rules[1])
-        assertEquals(Triple("PUT", LocalRuleSet.Direct.target, "direct-revision"), transport.calls.last().let { Triple(it.method, it.target, it.text("revision")) })
-        vm.requestDelete(direct)
-        assertEquals(direct, vm.state.value.deleting)
+        assertEquals(advanced, saved.file(LocalRuleSet.Direct).document!!.rules.single())
+        assertEquals("direct.example", saved.file(LocalRuleSet.Block).document!!.rules.last().simpleRule()!!.values.single())
+        assertEquals(listOf(LocalRuleSet.Block.target, LocalRuleSet.Direct.target), transport.calls.takeLast(2).map { it.target })
+        val moved = RuleIdentity(LocalRuleSet.Block, 2)
+        vm.requestDelete(moved)
+        assertEquals(moved, vm.state.value.deleting)
         vm.delete()
         val deleted = vm.saved()
         assertEquals(listOf(advanced), deleted.file(LocalRuleSet.Direct).document!!.rules.toList())
         assertEquals(loaded.file(LocalRuleSet.Proxy), deleted.file(LocalRuleSet.Proxy))
-        assertEquals(loaded.file(LocalRuleSet.Block), deleted.file(LocalRuleSet.Block))
+        assertEquals(loaded.file(LocalRuleSet.Block).document, deleted.file(LocalRuleSet.Block).document)
         assertEquals(advanced, LocalRuleDocument.parse(transport.contents.getValue(LocalRuleSet.Direct.target)).rules.single())
     }
 
