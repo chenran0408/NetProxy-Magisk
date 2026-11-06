@@ -112,6 +112,7 @@
     <string name="policy_custom_default_route">New policies follow Proxy. Choose a region or node after saving.</string>
     <string name="policy_edit_custom">Edit policy</string>
     <string name="policy_delete_custom">Delete policy</string>
+    <string name="policy_disabled">Disabled</string>
     <string name="policy_custom_name">Policy name</string>
     <string name="policy_custom_packages">App package names (one per line)</string>
     <string name="policy_custom_domains">Domain suffixes (one per line)</string>

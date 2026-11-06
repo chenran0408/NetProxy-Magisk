@@ -157,6 +157,26 @@ internal class PolicyViewModel(private val repository: PolicyRepository) : ViewM
         }
     }
 
+    fun setDisabled(policy: PolicyModel, disabled: Boolean) {
+        if (policy.isCustom || _state.value.busyId.isNotBlank()) return
+        _state.update { it.copy(busyId = policy.id, error = "") }
+        viewModelScope.launch {
+            runCatching { repository.setDisabled(policy.id, disabled) }
+                .onSuccess {
+                    _state.update { state ->
+                        state.copy(
+                            policies = state.policies.map { item ->
+                                if (item.id == policy.id) item.copy(disabled = disabled) else item
+                            },
+                            busyId = "",
+                        )
+                    }
+                    refresh(force = true, silent = true)
+                }
+                .onFailure { error -> _state.update { it.copy(error = error.message.orEmpty(), busyId = "") } }
+        }
+    }
+
     fun saveChain(front: String, landing: String, landingPort: Int) {
         if (_state.value.busyId.isNotBlank()) return
         _state.update { it.copy(busyId = CHAIN_BUSY_ID, error = "") }

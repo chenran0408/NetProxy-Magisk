@@ -230,6 +230,11 @@ func TestResourcesPolicyListSaveAndValidation(t *testing.T) {
 		t.Fatalf("不存在的策略节点未被拒绝: %s", response.Body.String())
 	}
 	resourceAssertSuccess(t, server, "PUT", "/api/v1/policies/ai", `{"group_id":"default","node_tag":"","mode":"proxy"}`, "policy.saved", nil)
+	resourceAssertSuccess(t, server, "PUT", "/api/v1/policies/youtube", `{"disabled":true}`, "policy.saved", nil)
+	stored, err = os.ReadFile(paths.New(server.options.ModuleDir).Policies())
+	if err != nil || !strings.Contains(string(stored), `"id":"youtube"`) || !strings.Contains(string(stored), `"disabled":true`) {
+		t.Fatalf("内置策略停用状态未持久化: %s, %v", stored, err)
+	}
 	response, result = resourceRequest(t, server, "POST", "/api/v1/policies/ai/url-test", "")
 	if response.Code != http.StatusBadRequest || result.Code != "usage.invalid" || !strings.Contains(response.Body.String(), "Proxy 模式") {
 		t.Fatalf("Proxy 策略测速未明确拒绝: %s", response.Body.String())

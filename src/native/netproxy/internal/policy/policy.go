@@ -31,6 +31,7 @@ type Policy struct {
 	Mode           string   `json:"mode"`
 	Region         string   `json:"region,omitempty"`
 	RuntimeTag     string   `json:"runtime_tag"`
+	Disabled       bool     `json:"disabled,omitempty"`
 }
 
 type file struct {
@@ -216,6 +217,9 @@ func BuildRuntime(ctx context.Context, path, catalogRoot, chainLanding string, p
 		}
 	}
 	for _, item := range policies {
+		if item.Disabled {
+			continue
+		}
 		target := item.RuntimeTag
 		if target == "" {
 			target = "Proxy"

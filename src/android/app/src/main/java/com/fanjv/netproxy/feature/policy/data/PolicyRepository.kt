@@ -54,6 +54,10 @@ internal class PolicyRepository(private val client: ModuleApiClient) {
         client.delete("/policies/$id")
     }
 
+    suspend fun setDisabled(id: String, disabled: Boolean) {
+        client.put("/policies/$id", buildJsonObject { put("disabled", disabled) })
+    }
+
     suspend fun test(policy: PolicyModel): NodeDelayResult = client.json.decodeFromJsonElement<NodeDelayResult>(
         client.post("/policies/${policy.id}/url-test").data
     )

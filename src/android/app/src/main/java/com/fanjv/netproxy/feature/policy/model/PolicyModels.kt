@@ -19,6 +19,7 @@ internal data class PolicyModel(
     val mode: String = "auto",
     val region: String = "",
     @SerialName("runtime_tag") val runtimeTag: String = "Proxy",
+    val disabled: Boolean = false,
     @SerialName("chain_available") val chainAvailable: Boolean = false,
     val groups: List<CatalogNodeGroup> = emptyList(),
     val persisted: Boolean = false,

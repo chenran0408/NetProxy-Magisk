@@ -251,6 +251,7 @@ internal fun PolicyScreen(
                                     pickerPolicyId = policy.id
                                     pickerGroupId = policy.groupId
                                 },
+                                onToggleDisabled = { viewModel.setDisabled(policy, !policy.disabled) },
                                 onEditCustom = { openCustomEditor(policy.id) },
                                 onDeleteCustom = { deletePolicyId = policy.id },
                             )
@@ -426,6 +427,7 @@ private fun PolicyRow(
     busy: Boolean,
     delay: NodeDelayResult?,
     onOpen: () -> Unit,
+    onToggleDisabled: () -> Unit,
     onEditCustom: () -> Unit,
     onDeleteCustom: () -> Unit,
 ) {
@@ -494,7 +496,16 @@ private fun PolicyRow(
                     }
                 }
             }
-            if (policy.isCustom) {
+            if (!policy.isCustom) {
+                IconButton(enabled = !busy, onClick = onToggleDisabled) {
+                    Icon(
+                        Icons.Rounded.Block,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = if (policy.disabled) colorScheme.onSurfaceVariantActions else colorScheme.primary
+                    )
+                }
+            } else {
                 IconButton(enabled = !busy, onClick = onEditCustom) {
                     Icon(
                         Icons.Rounded.Edit,
@@ -1308,7 +1319,9 @@ private fun CompactSearchField(value: String, onValueChange: (String) -> Unit, h
 }
 
 @Composable
-private fun policyTargetLabel(policy: PolicyModel): String = when (policy.mode) {
+private fun policyTargetLabel(policy: PolicyModel): String = if (policy.disabled) {
+    stringResource(R.string.policy_disabled)
+} else when (policy.mode) {
     "direct" -> stringResource(R.string.policy_direct)
     "proxy" -> stringResource(R.string.policy_proxy)
     "chain" -> stringResource(R.string.policy_chain)

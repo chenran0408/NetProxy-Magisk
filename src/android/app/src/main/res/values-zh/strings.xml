@@ -120,6 +120,7 @@
     <string name="policy_custom_default_route">新策略默认跟随 Proxy，保存后可选择地区或节点。</string>
     <string name="policy_edit_custom">编辑策略</string>
     <string name="policy_delete_custom">删除策略</string>
+    <string name="policy_disabled">已停用</string>
     <string name="policy_custom_name">策略名称</string>
     <string name="policy_custom_packages">应用包名（每行一个）</string>
     <string name="policy_custom_domains">域名后缀（每行一个）</string>

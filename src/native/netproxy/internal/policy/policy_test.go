@@ -124,6 +124,22 @@ func TestLoadUpgradesOlderAIPolicyMatchSet(t *testing.T) {
 	}
 }
 
+func TestLoadPreservesDisabledBuiltinPolicy(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "policies.json")
+	content := `{"schema":1,"policies":[{"id":"youtube","name":"YouTube","icon":"YT","type":"domain","rule_sets":["geosite/youtube"],"group_id":"default","mode":"auto","runtime_tag":"Proxy","disabled":true}]}`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	items, err := Load(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	youtube, ok := Find(items, "youtube")
+	if !ok || !youtube.Disabled {
+		t.Fatalf("disabled built-in policy was not preserved: %#v", youtube)
+	}
+}
+
 func TestSaveUsesPrivateAtomicFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "policies.json")
 	if err := Save(context.Background(), path, Defaults()); err != nil {
@@ -190,6 +206,23 @@ func TestBuildRuntimeProjectsPackageAndDomainMatches(t *testing.T) {
 	text := string(content)
 	if !strings.Contains(text, `"package_name":["com.openai.chatgpt"]`) || !strings.Contains(text, `"domain_suffix":["openai.com"]`) {
 		t.Fatalf("runtime overlay omitted AI app/domain matches: %s", text)
+	}
+}
+
+func TestBuildRuntimeSkipsDisabledPolicy(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runtime", "policies.json")
+	written, err := BuildRuntime(context.Background(), path, t.TempDir(), filepath.Join(filepath.Dir(path), "chain-landing.json"), []Policy{
+		{ID: "youtube", RuleSets: []string{"geosite/youtube"}, Mode: "proxy", Disabled: true},
+	})
+	if err != nil || !written {
+		t.Fatalf("BuildRuntime() = %v, %v", written, err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(content), "geosite/youtube") {
+		t.Fatalf("disabled policy still produced a route: %s", content)
 	}
 }
 

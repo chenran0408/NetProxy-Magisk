@@ -112,6 +112,7 @@
     <string name="policy_custom_default_route">Новая стратегия использует Proxy. После сохранения можно выбрать регион или узел.</string>
     <string name="policy_edit_custom">Изменить стратегию</string>
     <string name="policy_delete_custom">Удалить стратегию</string>
+    <string name="policy_disabled">Отключено</string>
     <string name="policy_custom_name">Название стратегии</string>
     <string name="policy_custom_packages">Имена пакетов приложений (по одному в строке)</string>
     <string name="policy_custom_domains">Суффиксы доменов (по одному в строке)</string>

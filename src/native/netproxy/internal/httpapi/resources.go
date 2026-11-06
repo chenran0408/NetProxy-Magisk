@@ -193,6 +193,7 @@ func (s *Server) savePolicy(ctx context.Context, r *http.Request) (contract.Resu
 		PackageNames   *[]string `json:"package_names"`
 		DomainSuffixes *[]string `json:"domain_suffixes"`
 		Ports          *[]int    `json:"ports"`
+		Disabled       *bool     `json:"disabled"`
 	}
 	if err := resourceDecode(r, &input); err != nil {
 		return contract.Result{}, err
@@ -221,6 +222,9 @@ func (s *Server) savePolicy(ctx context.Context, r *http.Request) (contract.Resu
 	if input.Ports != nil {
 		current.Ports = *input.Ports
 	}
+	if input.Disabled != nil {
+		current.Disabled = *input.Disabled
+	}
 	if input.GroupID != nil && *input.GroupID != "" {
 		current.GroupID = *input.GroupID
 	}
@@ -248,19 +252,21 @@ func (s *Server) savePolicy(ctx context.Context, r *http.Request) (contract.Resu
 			current.Mode = "manual"
 		}
 	}
-	if current.Mode == "auto" || current.Mode == "manual" {
+	if !current.Disabled && (current.Mode == "auto" || current.Mode == "manual") {
 		if err := resourceGroupID(current.GroupID, false); err != nil {
 			return contract.Result{}, err
 		}
 	}
-	if current.Mode == "chain" && !policyChainAvailable(s.options.RuntimeDir) {
+	if !current.Disabled && current.Mode == "chain" && !policyChainAvailable(s.options.RuntimeDir) {
 		return contract.Result{}, invalid("链式代理当前不可用，请先准备至少一个支持链式落地的节点")
 	}
 	if err := policy.Validate(current); err != nil {
 		return contract.Result{}, invalid(err.Error())
 	}
-	if err := validatePolicyTarget(ctx, s.options.CatalogRoot, current); err != nil {
-		return contract.Result{}, invalid(err.Error())
+	if !current.Disabled {
+		if err := validatePolicyTarget(ctx, s.options.CatalogRoot, current); err != nil {
+			return contract.Result{}, invalid(err.Error())
+		}
 	}
 	for index := range items {
 		if items[index].ID == id {
@@ -283,7 +289,7 @@ func (s *Server) deletePolicy(ctx context.Context, r *http.Request) (contract.Re
 	}
 	id := r.PathValue("id")
 	if policy.IsBuiltin(id) {
-		return contract.Result{}, invalid("内置策略不能删除")
+		return contract.Result{}, invalid("内置策略不能删除，请停用不需要的策略")
 	}
 	items, err := policy.Load(ctx, s.policyPath())
 	if err != nil {

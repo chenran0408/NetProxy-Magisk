@@ -6,8 +6,8 @@ NetProxy Android App 的“策略”入口管理路由策略定义，而不是�
 
 - `GET /api/v1/policies` 返回 `schema=1` 策略列表及可用 Catalog 分组和节点。
 - `POST /api/v1/policies` 创建自定义策略，至少提供一个 `package_names`、`domain_suffixes` 或 `ports` 匹配条件。未指定 `mode` 时默认跟随 `proxy`，不要求本地节点组非空；保存后可另选地区或节点。显式指定 `auto` 或 `manual` 时仍校验对应分组和节点。
-- `PUT /api/v1/policies/{id}` 保存选择，并可修改自定义策略的 `name`、`package_names`、`domain_suffixes` 和 `ports`。内置策略只允许修改出口选择。
-- `DELETE /api/v1/policies/{id}` 删除自定义策略；内置策略不能删除。
+- `PUT /api/v1/policies/{id}` 保存选择，并可修改自定义策略的 `name`、`package_names`、`domain_suffixes` 和 `ports`。内置策略只允许修改出口选择，也可以传 `disabled=true/false` 停用或恢复。
+- `DELETE /api/v1/policies/{id}` 删除自定义策略；内置策略不能物理删除，因为缺失时会由默认集合补回。不需要的内置策略应在 App 中停用，停用后不会生成运行时路由规则。
 - `PUT /api/v1/policies/{id}` 的 `mode` 支持 `auto`、`manual`、`direct`、`proxy` 和 `chain`；`auto` 可通过 `region` 绑定一个地区并在该地区内自动选择节点，`manual` 选择具体节点，后三种分别选择直连、普通 Proxy 或链式代理。
 - `POST /api/v1/policies/{id}/url-test` 使用现有节点测速服务测试当前策略选择。
 
