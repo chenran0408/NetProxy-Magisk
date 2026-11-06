@@ -574,12 +574,6 @@ func writeRuntimeProviders(path string, groups []*loadedGroup, chain ...*chainRu
 			Tag:  group.RuntimeTag,
 			Options: &option.ProviderLocalOptions{
 				Path: group.ProviderPath,
-				HealthCheck: option.ProviderHealthCheckOptions{
-					Enabled:  true,
-					URL:      "https://www.gstatic.com/generate_204",
-					Interval: badoption.Duration(10 * time.Minute),
-					Timeout:  badoption.Duration(5 * time.Second),
-				},
 			},
 		})
 	}

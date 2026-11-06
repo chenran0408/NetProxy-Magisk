@@ -60,6 +60,14 @@ func TestScanAndBuildRuntime(t *testing.T) {
 	}
 	providers := readFile(t, providersPath)
 	outbounds := readFile(t, outboundsPath)
+	if strings.Contains(providers, `"enabled": true`) {
+		t.Fatalf("provider background probes must not block reload shutdown: %s", providers)
+	}
+	for _, tag := range []string{"Auto/同名分组 [default]", "Auto/同名分组 [remote]"} {
+		if !strings.Contains(outbounds, tag) {
+			t.Fatalf("disabling provider sweeps must preserve automatic group %s", tag)
+		}
+	}
 	state := "selected_node_ref\t" + result.SelectedNodeRef
 	for _, expected := range []string{`"tag": "同名分组 [default]"`, `"tag": "同名分组 [remote]"`} {
 		if !strings.Contains(providers, expected) {
