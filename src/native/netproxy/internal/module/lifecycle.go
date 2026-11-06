@@ -260,6 +260,22 @@ func StopService(_ context.Context, options Options) error {
 	return nil
 }
 
+// ReloadPolicyRuntime waits for an existing lifecycle operation before applying saved policies.
+func ReloadPolicyRuntime(ctx context.Context, options Options) (bool, error) {
+	lock, err := waitLifecycleLock(ctx, options.StateFile)
+	if err != nil {
+		return false, err
+	}
+	defer lock.release()
+	if !service.ProcessRunning(options.SingBoxPath) {
+		return false, nil
+	}
+	if err := ReloadService(ctx, options); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // ReloadService 原位重载已运行实例，并等待 Service API 报告新的启动时间。
 func ReloadService(ctx context.Context, options Options) error {
 	if err := validateLifecycleOptions(options); err != nil {

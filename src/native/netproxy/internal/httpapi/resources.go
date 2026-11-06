@@ -317,11 +317,12 @@ func (s *Server) deletePolicy(ctx context.Context, r *http.Request) (contract.Re
 func (s *Server) syncPolicyRuntime(ctx context.Context) (bool, error) {
 	marker := s.policyRuntimeMarker()
 	_ = os.Remove(marker)
-	if !service.ProcessRunning(s.options.SingBoxPath) {
-		return false, nil
-	}
-	if _, err := module.ManageService(ctx, s.options, "reload"); err != nil {
+	synced, err := module.ReloadPolicyRuntime(ctx, s.options)
+	if err != nil {
 		return false, &service.Error{Code: "policy.runtime_sync_failed", Message: fmt.Sprintf("策略已保存，但运行时同步失败: %v", err), Data: map[string]any{"persisted": true, "runtime_synced": false}}
+	}
+	if !synced {
+		return false, nil
 	}
 	if err := os.WriteFile(marker, []byte("synced\n"), 0o600); err != nil {
 		return false, err

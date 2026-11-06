@@ -324,6 +324,24 @@ func TestResourcesCreateExplicitAutoPolicyStillRequiresNodes(t *testing.T) {
 	}
 }
 
+func TestResourcesDisableBuiltinWithEmptyLocalGroup(t *testing.T) {
+	server := resourceFixture(t)
+	resourceWriteFile(t, filepath.Join(server.options.CatalogRoot, "default", "provider.json"), `{"outbounds":[]}`)
+	resourceAssertSuccess(t, server, "PUT", "/api/v1/policies/youtube", `{"disabled":true}`, "policy.saved", nil)
+	items, err := policy.Load(t.Context(), server.policyPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, found := policy.Find(items, "youtube")
+	if !found || !item.Disabled {
+		t.Fatalf("disabled built-in was not persisted: %+v", item)
+	}
+	response, _ := resourceRequest(t, server, "PUT", "/api/v1/policies/youtube", `{"disabled":false}`)
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "策略分组没有可用节点") {
+		t.Fatalf("enabling an empty automatic target must fail: %s", response.Body.String())
+	}
+}
+
 func TestResourcesNodeTagsPreserveSlashes(t *testing.T) {
 	server := resourceFixture(t)
 	query := url.Values{"group_id": {"default"}, "node_tag": {"节点 / 02"}}.Encode()
