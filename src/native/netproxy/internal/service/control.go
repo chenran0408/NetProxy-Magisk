@@ -212,7 +212,7 @@ func ReadStatus(ctx context.Context, options Options) (Status, error) {
 	}
 
 	if status.State == "ready" {
-		mergeRuntimeStatus(ctx, options, &status, active, state)
+		mergeRuntimeStatus(ctx, options, &status, active, state, module.Selection)
 	} else if status.State == "stopped" {
 		// 服务未运行时没有核心实时模式，展示持久化配置作为下一次启动模式。
 		status.OutboundMode = status.ConfiguredOutboundMode
@@ -742,7 +742,7 @@ func readActiveGroup(ctx context.Context, options Options, activeID string) (*ca
 	return &catalog.GroupSnapshot{Group: summary}, nil
 }
 
-func mergeRuntimeStatus(ctx context.Context, options Options, status *Status, active *catalog.GroupSnapshot, state stateFile) {
+func mergeRuntimeStatus(ctx context.Context, options Options, status *Status, active *catalog.GroupSnapshot, state stateFile, selection moduleconfig.Selection) {
 	status.OutboundMode = unknownOutboundMode
 	client, requestContext, cancel, err := newClient(ctx, options)
 	if err != nil {
@@ -803,10 +803,7 @@ func mergeRuntimeStatus(ctx context.Context, options Options, status *Status, ac
 	if runtimeTag == "" {
 		return
 	}
-	runtimeGroup := "Auto/" + runtimeTag
-	if status.SelectorMode == "manual" {
-		runtimeGroup = "Select/" + runtimeTag
-	}
+	runtimeGroup, _ := selection.RuntimeTargets(runtimeTag)
 	if groupsErr != nil {
 		return
 	}
