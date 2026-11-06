@@ -204,4 +204,64 @@ class PolicyViewModelTest {
         assertTrue(viewModel.state.value.error.contains("runtime reload failed"))
         assertFalse(viewModel.state.value.loading)
     }
+
+    @Test fun persistedSelectionFailureRefreshesSavedTargetAndKeepsWarning() = runBlocking {
+        assertPersistedMutationRefreshes(disable = false)
+    }
+
+    @Test fun persistedDisableFailureRefreshesSavedFlagAndKeepsWarning() = runBlocking {
+        assertPersistedMutationRefreshes(disable = true)
+    }
+
+    @Test fun persistedDeleteFailureRemovesCardAndKeepsWarning() = runBlocking {
+        var deleted = false
+        val warning = "saved but runtime busy"
+        val viewModel = PolicyViewModel(PolicyRepository(ModuleApiClient(TestApiTransport { request ->
+            when {
+                request.method == "DELETE" -> {
+                    deleted = true
+                    throw ModuleApiException("policy.runtime_sync_failed", warning,
+                        buildJsonObject { put("persisted", true) })
+                }
+                request.path == "/chain" -> apiSuccess("{}")
+                else -> apiSuccess("""{"policies":[${if (deleted) "" else hills}]}""")
+            }
+        })))
+        viewModel.refresh()
+        withTimeout(5_000) { viewModel.state.first { !it.loading } }
+        viewModel.deleteCustom(viewModel.state.value.policies.single())
+        withTimeout(5_000) { viewModel.state.first { it.busyId.isEmpty() && it.policies.isEmpty() } }
+        assertEquals(warning, viewModel.state.value.error)
+    }
+
+    private suspend fun assertPersistedMutationRefreshes(disable: Boolean) {
+        var saved = false
+        var reads = 0
+        val warning = "策略已保存，但运行时同步失败: 已有服务操作正在执行"
+        val viewModel = PolicyViewModel(PolicyRepository(ModuleApiClient(TestApiTransport { request ->
+            when {
+                request.method == "PUT" -> {
+                    saved = true
+                    throw ModuleApiException("policy.runtime_sync_failed", warning,
+                        buildJsonObject { put("persisted", true); put("runtime_synced", false) })
+                }
+                request.path == "/chain" -> apiSuccess("{}")
+                else -> {
+                    reads++
+                    apiSuccess("""{"policies":[{"id":"ai","name":"AI","mode":"manual","node_tag":"${if (saved) "Tokyo" else "Old"}","disabled":${saved && disable},"runtime_synced":${!saved}}]}""")
+                }
+            }
+        })))
+        viewModel.refresh()
+        withTimeout(5_000) { viewModel.state.first { !it.loading } }
+        val policy = viewModel.state.value.policies.single()
+        if (disable) viewModel.setDisabled(policy, true)
+        else viewModel.select(policy, "default", "Tokyo")
+        withTimeout(5_000) { viewModel.state.first { it.busyId.isEmpty() && it.policies.single().nodeTag == "Tokyo" } }
+        assertEquals(2, reads)
+        assertEquals("Tokyo", viewModel.state.value.policies.single().nodeTag)
+        assertEquals(disable, viewModel.state.value.policies.single().disabled)
+        assertFalse(viewModel.state.value.policies.single().runtimeSynced)
+        assertEquals(warning, viewModel.state.value.error)
+    }
 }

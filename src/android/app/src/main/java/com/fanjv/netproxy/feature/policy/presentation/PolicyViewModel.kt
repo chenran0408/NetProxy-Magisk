@@ -77,7 +77,7 @@ internal class PolicyViewModel(private val repository: PolicyRepository) : ViewM
         _state.update { it.copy(busyId = policy.id, error = "", delays = it.delays - policy.id) }
         viewModelScope.launch {
             runCatching { repository.save(policy.copy(groupId = groupId, nodeTag = nodeTag, mode = mode, region = region)) }
-                .onSuccess { refresh(force = true) }.onFailure { error -> _state.update { it.copy(error = error.message.orEmpty(), busyId = "") } }
+                .onSuccess { refresh(force = true) }.onFailure { handlePolicyWriteFailure(it) }
         }
     }
 
@@ -153,7 +153,7 @@ internal class PolicyViewModel(private val repository: PolicyRepository) : ViewM
         viewModelScope.launch {
             runCatching { repository.delete(policy.id) }
                 .onSuccess { refresh(force = true) }
-                .onFailure { error -> _state.update { it.copy(error = error.message.orEmpty(), busyId = "") } }
+                .onFailure { handlePolicyWriteFailure(it) }
         }
     }
 
@@ -173,8 +173,14 @@ internal class PolicyViewModel(private val repository: PolicyRepository) : ViewM
                     }
                     refresh(force = true, silent = true)
                 }
-                .onFailure { error -> _state.update { it.copy(error = error.message.orEmpty(), busyId = "") } }
+                .onFailure { handlePolicyWriteFailure(it) }
         }
+    }
+
+    private fun handlePolicyWriteFailure(error: Throwable) {
+        if (error is CancellationException) throw error
+        _state.update { it.copy(error = error.message.orEmpty(), busyId = "") }
+        if (error is ModuleApiException && error.persisted) refresh(silent = true, force = true)
     }
 
     fun saveChain(front: String, landing: String, landingPort: Int) {

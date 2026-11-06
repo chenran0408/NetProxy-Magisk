@@ -523,7 +523,7 @@ private fun PolicyRow(
                     )
                 }
             }
-            RuntimeDot(policy.runtimeSynced)
+            RuntimeDot(policy.runtimeSynced && !policy.disabled)
         }
     }
 }
