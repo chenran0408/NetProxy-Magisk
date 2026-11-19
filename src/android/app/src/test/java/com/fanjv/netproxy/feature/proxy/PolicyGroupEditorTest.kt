@@ -48,6 +48,29 @@ class PolicyGroupEditorTest {
         assertFalse(filter.containsMatchIn("Local/THK Node"))
     }
 
+    @Test fun editingRegionPresetKeepsExistingTagAndProvider() {
+        val hkFilter = JsonPrimitive(PolicyRegionPreset.HK.include)
+        val original = parsePolicySection(
+            """{"outbounds":[
+                {"type":"selector","tag":"Proxy","outbounds":["HK Auto"]},
+                {"type":"urltest","tag":"HK Auto","outbounds":["block"],"providers":["Local"],"interval":"3m","include":$hkFilter},
+                {"type":"block","tag":"block"}
+            ]}""", "outbounds",
+        )
+        val document = PolicyGroupDocument(original, "r1", "HK Auto", listOf("Proxy", "HK Auto", "block"), listOf("Local"))
+
+        val draft = PolicyRegionPreset.JP.applyTo(document.initial, "block", document.originalTag)
+        val updated = parsePolicySection(document.updated(draft), "outbounds")
+
+        assertEquals(original[0], updated[0])
+        assertEquals(original[2], updated[2])
+        assertEquals("HK Auto", draft.tag)
+        assertEquals(original[1]["providers"], updated[1]["providers"])
+        assertEquals(original[1]["interval"], updated[1]["interval"])
+        assertFalse(updated[1].containsKey("use_all_providers"))
+        assertEquals(JsonPrimitive(PolicyRegionPreset.JP.include), updated[1]["include"])
+    }
+
     @Test fun deletesOnlyTheConfirmedGroupWithTheCurrentRevision() = runBlocking {
         var writes = 0
         val original = parsePolicySection(source, "outbounds")

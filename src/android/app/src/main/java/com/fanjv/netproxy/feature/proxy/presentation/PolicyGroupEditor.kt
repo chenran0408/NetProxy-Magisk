@@ -157,25 +157,6 @@ internal fun PolicyGroupEditorScreen(
                             BasicComponent(title = stringResource(R.string.policy_group_name), summary = draft.tag)
                         })
                     } else {
-                        document.blockTag?.let { blockTag ->
-                            add(CardItem("region") {
-                                val locale = LocalConfiguration.current.locales[0]
-                                val presets = PolicyRegionPreset.entries
-                                OverlayDropdownPreference(
-                                    title = stringResource(R.string.policy_region_preset),
-                                    items = listOf(stringResource(R.string.policy_region_custom)) +
-                                        presets.map { Locale.Builder().setRegion(it.name).build().getDisplayCountry(locale) },
-                                    selectedIndex = (draft.regionPreset?.ordinal ?: -1) + 1,
-                                    enabled = enabled,
-                                    onSelectedIndexChange = { index ->
-                                        change { current ->
-                                            if (index == 0) current.copy(include = "") else
-                                                presets[index - 1].applyTo(current, blockTag)
-                                        }
-                                    },
-                                )
-                            })
-                        }
                         add(CardItem("name") {
                             PolicyField(R.string.policy_group_name, draft.tag, enabled, first = true) { value ->
                                 change { it.copy(tag = value) }
@@ -185,6 +166,34 @@ internal fun PolicyGroupEditorScreen(
                                     stringResource(R.string.policy_group_duplicate),
                                     Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                                     color = colorScheme.error,
+                                    style = MiuixTheme.textStyles.footnote1,
+                                )
+                            }
+                        })
+                    }
+                    document.blockTag?.let { blockTag ->
+                        add(CardItem("region") {
+                            val locale = LocalConfiguration.current.locales[0]
+                            val presets = PolicyRegionPreset.entries
+                            OverlayDropdownPreference(
+                                title = stringResource(R.string.policy_region_preset),
+                                items = listOf(stringResource(R.string.policy_region_custom)) +
+                                    presets.map { Locale.Builder().setRegion(it.name).build().getDisplayCountry(locale) },
+                                selectedIndex = (draft.regionPreset?.ordinal ?: -1) + 1,
+                                enabled = enabled,
+                                onSelectedIndexChange = { index ->
+                                    change { current ->
+                                        if (index > 0) presets[index - 1].applyTo(current, blockTag, document.originalTag)
+                                        else if (current.regionPreset != null) current.copy(include = "")
+                                        else current
+                                    }
+                                },
+                            )
+                            if (editing && (document.initial.type != "urltest" || document.initial.outbounds.any { it != blockTag })) {
+                                Text(
+                                    stringResource(R.string.policy_region_edit_note),
+                                    Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+                                    color = colorScheme.onSurfaceVariantSummary,
                                     style = MiuixTheme.textStyles.footnote1,
                                 )
                             }

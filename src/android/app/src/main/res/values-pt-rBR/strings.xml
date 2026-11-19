@@ -13,6 +13,7 @@
     <string name="policy_group_name">Nome do grupo</string>
     <string name="policy_region_preset">Seleção automática por região</string>
     <string name="policy_region_custom">Personalizado</string>
+    <string name="policy_region_edit_note">Ao salvar uma região, o grupo passa a testar os nós automaticamente e substitui as saídas fixas.</string>
     <string name="policy_group_type">Tipo do grupo</string>
     <string name="policy_auto_select">Seleção automática</string>
     <string name="policy_add_auto">Adicionar seleção automática</string>

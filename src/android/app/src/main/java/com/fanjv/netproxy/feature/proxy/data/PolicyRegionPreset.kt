@@ -28,8 +28,8 @@ internal enum class PolicyRegionPreset(aliases: String) {
     val include = "(?i)^[^/]+/(?:.*(?:$aliases)|(?:.*[^a-z])?$code(?:[^a-z]|$))"
     val tag = "$name Auto"
 
-    fun applyTo(draft: PolicyGroupDraft, blockTag: String): PolicyGroupDraft = draft.copy(
-        tag = draft.tag.takeUnless { it.isBlank() || it == draft.regionPreset?.tag } ?: tag,
+    fun applyTo(draft: PolicyGroupDraft, blockTag: String, originalTag: String? = null): PolicyGroupDraft = draft.copy(
+        tag = originalTag ?: draft.tag.takeUnless { it.isBlank() || it == draft.regionPreset?.tag } ?: tag,
         type = "urltest",
         outbounds = listOf(blockTag),
         useAll = draft.useAll || draft.providers.isEmpty(),
