@@ -13,12 +13,15 @@ output_dir="$(CDPATH= cd -- "$2" && pwd)"
 module="$output_dir/$3"
 
 test -f "$module_dir/module.prop"
-# Windows 检出的 CRLF 会让 customize.sh 的严格匹配失败，进而中断安装。
+# Android 的 shell 脚本和模块元数据都必须使用 LF。
 # grep 在 MSYS 环境会剥离 CR，必须用 od 做字节级检测。
-if od -An -c "$module_dir/module.prop" | grep -q '\\r'; then
-  printf '%s\n' 'module.prop 包含 CRLF 行尾，请先转换为 LF' >&2
-  exit 1
-fi
+for entry in "$module_dir/module.prop" "$module_dir"/*.sh "$module_dir/META-INF/com/google/android/update-binary"; do
+  test -f "$entry" || continue
+  if od -An -c "$entry" | grep -q '\\r'; then
+    printf '%s 包含 CRLF 行尾，请先转换为 LF\n' "${entry#"$module_dir"/}" >&2
+    exit 1
+  fi
+done
 # 拒绝更新已有归档，避免上次打包的已删除文件混入新版本。
 test ! -e "$module"
 

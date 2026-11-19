@@ -248,6 +248,14 @@ if sh "$ROOT/.github/scripts/package-module.sh" "$TEMP/crlf-module" "$TEMP/outpu
   exit 1
 fi
 [ ! -e "$TEMP/output/crlf.zip" ]
+printf 'id=netproxy\nversion=test\n' > "$TEMP/crlf-module/module.prop"
+printf '#!/system/bin/sh\r\numask 077\r\n' > "$TEMP/crlf-module/customize.sh"
+if sh "$ROOT/.github/scripts/package-module.sh" "$TEMP/crlf-module" "$TEMP/output" crlf-script.zip > "$TEMP/crlf.log" 2>&1; then
+  printf '%s\n' 'CRLF customize.sh 不能进入模块包' >&2
+  exit 1
+fi
+assert_contains "$TEMP/crlf.log" 'customize.sh 包含 CRLF'
+[ ! -e "$TEMP/output/crlf-script.zip" ]
 if sh "$ROOT/.github/scripts/complete-module.sh" "$TEMP/output/missing.zip" "$TEMP/module/NetProxy.apk" "$TEMP/module/bin/android-platform.dex" >/dev/null 2>&1; then
   printf '%s\n' '不能从缺失的模块内容生成发行包' >&2
   exit 1
