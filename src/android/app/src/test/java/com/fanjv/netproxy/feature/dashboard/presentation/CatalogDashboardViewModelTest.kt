@@ -13,6 +13,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
@@ -62,6 +63,63 @@ class CatalogDashboardViewModelTest {
             withTimeout(5_000) { replies.receive() }.complete(snapshot("Rule", "stopped"))
             val stopped = withTimeout(5_000) { vm.state.first { it.serviceStatusKnown && it.serviceState == "stopped" } }
             assertFalse(stopped.showRunningCard)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test fun eventDisconnectDoesNotDiscardInFlightServiceStatus() = runBlocking {
+        val scope = CoroutineScope(coroutineContext + SupervisorJob(coroutineContext.job))
+        val statusRead = CompletableDeferred<Unit>()
+        val statusReply = CompletableDeferred<Unit>()
+        val disconnect = CompletableDeferred<Unit>()
+        val streams = AtomicInteger()
+        val transport = object : TestApiTransport() {
+            override suspend fun respond(request: ApiTestRequest): ModuleHttpResponse {
+                assertEquals("/service", request.path)
+                statusRead.complete(Unit)
+                statusReply.await()
+                return apiSuccess(snapshot("Rule", "ready"))
+            }
+
+            override suspend fun watch(topics: Set<String>, consume: suspend (ModuleEvent) -> Unit) {
+                if (streams.incrementAndGet() == 1) {
+                    disconnect.await()
+                    error("event stream disconnected")
+                }
+                awaitCancellation()
+            }
+        }
+        val vm = CatalogDashboardViewModel(ServiceRepository(ModuleApiClient(transport, scope)), 1_000L, scope)
+        try {
+            vm.setAvailability(ModuleAvailability(ModuleConnectionState.READY))
+            vm.setVisible(true)
+            withTimeout(5_000) { statusRead.await() }
+            disconnect.complete(Unit)
+            withTimeout(5_000) { vm.state.first { it.serviceError.isNotEmpty() } }
+            statusReply.complete(Unit)
+            val ready = withTimeout(5_000) { vm.state.first { it.serviceStatusKnown } }
+            assertTrue(ready.isReady)
+            assertTrue(ready.canToggleService)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test fun reconnectWhileVisibleRefreshesServiceWithoutAnEvent() = runBlocking {
+        val scope = CoroutineScope(coroutineContext + SupervisorJob(coroutineContext.job))
+        val calls = AtomicInteger()
+        val vm = model(scope, Transport {
+            snapshot("Rule", if (calls.incrementAndGet() == 1) "stopped" else "ready")
+        })
+        try {
+            vm.setVisible(true)
+            withTimeout(5_000) { vm.state.first { it.serviceStatusKnown && !it.isReady } }
+            vm.setAvailability(ModuleAvailability(ModuleConnectionState.UNAVAILABLE))
+            vm.setAvailability(ModuleAvailability(ModuleConnectionState.READY))
+            val ready = withTimeout(5_000) { vm.state.first { it.serviceStatusKnown && it.isReady } }
+            assertTrue(ready.canToggleService)
+            assertEquals(2, calls.get())
         } finally {
             scope.cancel()
         }
