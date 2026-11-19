@@ -320,18 +320,18 @@ private fun CatalogGroupCard(
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
                 text = group.name,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f, fill = false),
                 fontSize = 17.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-
+            if (isSubscription) SubscriptionExpiryDate(usage?.expire)
         }
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
@@ -342,11 +342,7 @@ private fun CatalogGroupCard(
                     text = if (!isSubscription) {
                         stringResource(R.string.subscription_node_count, group.nodeCount)
                     } else if (total > 0) {
-                        stringResource(
-                            R.string.subscription_usage,
-                            formatBytes(used),
-                            formatBytes(total)
-                        )
+                        "${formatBytes(used)} / ${formatBytes(total)}"
                     } else {
                         stringResource(R.string.subscription_no_usage)
                     },
@@ -356,15 +352,9 @@ private fun CatalogGroupCard(
                 )
                 Text(
                     text = if (updatedAt.isNotBlank()) {
-                        stringResource(
+                        if (isSubscription) formatDate(updatedAt) else stringResource(
                             R.string.subscription_updated_at,
-                            stringResource(
-                                if (isSubscription) {
-                                    R.string.subscription_updated_label
-                                } else {
-                                    R.string.local_config_modified_label
-                                }
-                            ),
+                            stringResource(R.string.local_config_modified_label),
                             formatDate(updatedAt)
                         )
                     } else {
@@ -946,10 +936,11 @@ private fun SubscriptionSummaryCard(subscription: CatalogGroupSummary) {
                     text = subscription.name,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f, fill = false),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
+                if (isSubscription) SubscriptionExpiryDate(subscription.usage?.expire)
                 if (status != null) {
                     val (background, foreground) = when (status) {
                         SubscriptionUpdateStatus.Updating -> colorScheme.primaryContainer to colorScheme.onPrimaryContainer
@@ -976,6 +967,17 @@ private fun SubscriptionSummaryCard(subscription: CatalogGroupSummary) {
             }
         }
     }
+}
+
+@Composable
+private fun SubscriptionExpiryDate(expire: Long?) {
+    if (expire == null || expire <= 0) return
+    val expired = expire <= Instant.now().epochSecond
+    StatusTag(
+        label = DateTimeFormatter.ISO_LOCAL_DATE.withZone(ZoneId.systemDefault()).format(Instant.ofEpochSecond(expire)),
+        backgroundColor = if (expired) colorScheme.errorContainer else colorScheme.primaryContainer,
+        contentColor = if (expired) colorScheme.onErrorContainer else colorScheme.onPrimaryContainer,
+    )
 }
 
 @Composable
