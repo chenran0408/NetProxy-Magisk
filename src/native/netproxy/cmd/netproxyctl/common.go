@@ -54,6 +54,7 @@ func (c *cli) help() {
   netproxyctl [--json] [--timeout <秒|时长>] app list|mode|add|remove|enable|disable
   netproxyctl [--json] [--timeout <秒|时长>] ebpf status [configured|all|local|shared] [--raw]
   netproxyctl [--json] [--timeout <秒|时长>] config list|read|check|validate|apply
+  netproxyctl config merge-install-policies <当前模块目录> <新版主配置> <快照输出文件>
   netproxyctl [--json] [--timeout <秒|时长>] logs show|clear|export
   netproxyctl [--json] [--timeout <秒|时长>] api init|start|status|access
 

@@ -7,6 +7,7 @@ import (
 	"os"
 
 	moduleapp "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/module"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 )
 
 func (c *cli) config(ctx context.Context, args []string) error {
@@ -55,6 +56,15 @@ func (c *cli) config(ctx context.Context, args []string) error {
 			return err
 		}
 		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "config." + action, Message: "配置检查通过", Data: map[string]string{"target": positionals[0], "revision": savedRevision}})
+	case "merge-install-policies":
+		if len(positionals) != 3 {
+			return usageError("config merge-install-policies 需要当前模块目录、新版主配置与快照输出文件")
+		}
+		current := paths.SingBoxConfig(paths.New(positionals[0]).SingBoxDir())
+		if err := moduleapp.MergeInstallPolicies(current, positionals[1], positionals[2]); err != nil {
+			return err
+		}
+		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "config.install_policies_merged", Message: "安装策略快照已生成", Data: map[string]any{}})
 	default:
 		return fmt.Errorf("未知 config 操作 %q", action)
 	}

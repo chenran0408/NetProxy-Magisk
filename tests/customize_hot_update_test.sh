@@ -66,6 +66,11 @@ write_module() {
   printf '%s\n' '#!/bin/sh' \
     'printf "%s\n" "$*" >> "$CALL_LOG"' \
     '[ "$1" != catalog ] || [ "${NETPROXY_MODULE_DIR:-}" = "$TEST_LIVE_DIR" ] || exit 98' \
+    'if [ "$1:$2" = config:merge-install-policies ]; then' \
+    '  if [ -n "${TEST_POLICY_CTL:-}" ]; then exec "$TEST_POLICY_CTL" "$@"; fi' \
+    '  mkdir -p "$(dirname "$5")" && exec cp "$4" "$5"' \
+    '  exit 1' \
+    'fi' \
     'case "$1:$2:$3" in' \
     '  __internal:worker:stop) exit "${TEST_WORKER_STOP:-0}" ;;' \
     '  service:stop:) exit "${TEST_SERVICE_STOP:-0}" ;;' \
@@ -99,6 +104,7 @@ reset_modules() {
   : > "$LIVE/update"
   : > "$CALL_LOG"
   MODPATH="$STAGE"
+  cp "$STAGE/config/singbox/config.json" "$STAGE/$INSTALL_POLICY_DEFAULTS"
   INSTALL_MODE=preserve
   PROXY_WAS_RUNNING=false
   SERVICE_STOPPED=false
@@ -273,6 +279,115 @@ test_policy_preservation() (
   done
 )
 
+test_nodes_policy_snapshot() (
+  if [ -z "$NATIVE_CTL" ]; then
+    printf '%s\n' '跳过策略快照集成测试：需要 netproxyctl 主机程序'
+    exit 0
+  fi
+  reset_modules
+  TEST_POLICY_CTL="$NATIVE_CTL"
+  export TEST_POLICY_CTL
+  INSTALL_MODE=nodes
+  bundled="$STAGE/$INSTALL_POLICY_DEFAULTS"
+  live_config="$LIVE/config/singbox/config.json"
+  stage_config="$STAGE/config/singbox/config.json"
+  sed '/"rule_set": "geosite\/bilibili"/s/"outbound": "Bilibili"/"outbound": "direct"/' \
+    "$ROOT/src/module/config/singbox/config.json" > "$stage_config"
+  cp "$stage_config" "$bundled"
+  cat > "$live_config" <<'EOF'
+{
+  "log": {"level":"error"},
+  "outbounds": [
+    {"tag":"AI","type":"urltest","outbounds":["Work"],"include":"(?i)Japan"},
+    {"tag":"Work","type":"urltest","use_all_providers":true,"outbounds":["Auto"]},
+    {"tag":"custom-direct","type":"direct"}
+  ],
+  "route": {"final":"Work","rules":[
+    {"outbound":"AI","action":"route","rule_set":"geosite/old-ai-default"},
+    {"type":"default","package_name":["test.work.app"],"action":"route","outbound":"Work"},
+    {"type":"default","domain_suffix":"test.work.example","action":"route","outbound":"Work"},
+    {"package_name":"test.manual.untyped","action":"route","outbound":"Work"},
+    {"type":"default","package_name":"test.manual.complex","network":"tcp","action":"route","outbound":"Work"},
+    {"clash_mode":"Proxy","action":"route","outbound":"Work"},
+    {"package_name":"test.bypass.app","action":"route","outbound":"direct"}
+  ]}
+}
+EOF
+  copy_user_data_locked
+  grep -Fq '"tag": "Work"' "$stage_config"
+  grep -Fq '"test.work.app"' "$stage_config"
+  grep -Fq '"test.work.example"' "$stage_config"
+  grep -Fq '"include": "(?i)Japan"' "$stage_config"
+  grep -Fq '"level": "info"' "$stage_config"
+  grep -Fq '"tag": "Google FCM"' "$stage_config"
+  grep -Fq '"geosite/github"' "$stage_config"
+  awk '/[{]/ { rule = "" }
+       { rule = rule $0 }
+       /[}]/ && rule ~ /"rule_set": "geosite\/bilibili"/ && rule ~ /"outbound": "direct"/ { found = 1 }
+       END { exit !found }' "$stage_config"
+  if grep -Eq '"(custom-direct|geosite/old-ai-default|test\.(bypass\.app|manual\.untyped|manual\.complex))"' "$stage_config"; then
+    printf '%s\n' '旧版默认规则或 App 简单规则之外的配置覆盖了新版默认设置' >&2
+    exit 1
+  fi
+  [ "$(grep -Fc '"clash_mode": "Proxy"' "$stage_config")" -eq "$(grep -Fc '"clash_mode": "Proxy"' "$bundled")" ]
+  [ "$(grep -Fc '"rule_set": "geosite/category-ai-!cn"' "$stage_config")" -eq 1 ]
+  dns_line="$(grep -n '"action": "hijack-dns"' "$stage_config" | cut -d: -f1)"
+  app_line="$(grep -n '"test.work.app"' "$stage_config" | cut -d: -f1)"
+  business_line="$(grep -n '"rule_set": "geosite/bilibili"' "$stage_config" | cut -d: -f1)"
+  [ "$dns_line" -lt "$app_line" ]
+  [ "$app_line" -lt "$business_line" ]
+  assert_inbound "$STAGE/config/inbound/inbound.json" package
+  assert_module "$STAGE/config/module.json" package
+  assert_value "$STAGE/config/singbox/rules/remote/test.srs" package-remote
+  assert_value "$STAGE/data/catalog/default/provider.json" current-provider
+
+  "$NATIVE_CTL" config merge-install-policies "$LIVE" "$bundled" "$WORKDIR/explicit-snapshot.json" > "$WORKDIR/merge-result"
+  cmp "$stage_config" "$WORKDIR/explicit-snapshot.json"
+  [ "$(wc -l < "$WORKDIR/merge-result")" -eq 1 ]
+  grep -Fq '"schema":1' "$WORKDIR/merge-result"
+  grep -Fq '"ok":true' "$WORKDIR/merge-result"
+  grep -Fq '"code":"config.install_policies_merged"' "$WORKDIR/merge-result"
+  if grep -Eq '"(outbounds|route|secret|test\.work\.app)"' "$WORKDIR/merge-result"; then exit 1; fi
+
+  # Rebuild from the original bundle when the live policy changes before hot apply.
+  printf '%s\n' '{"outbounds":[{"type":"selector","tag":"New","outbounds":["direct"]}],"route":{"rules":[{"type":"default","action":"route","package_name":["test.new.app"],"outbound":"New"}]}}' > "$live_config"
+  copy_user_data_locked
+  grep -Fq '"test.new.app"' "$stage_config"
+  if grep -Eq '"(Work|test\.work\.app)"' "$stage_config"; then exit 1; fi
+
+  # The stage already passed the foreground check. Keep it ready for reboot if hot apply fails.
+  NETPROXY_MODULE_DIR="$STAGE" "$STAGE/bin/netproxyctl" config check
+  cp "$stage_config" "$WORKDIR/previous-config.json"
+  printf '%s\n' '{ invalid' > "$live_config"
+  if commit_hot_update; then exit 1; fi
+  cmp "$stage_config" "$WORKDIR/previous-config.json"
+  [ -e "$LIVE/update" ]
+  assert_value "$STAGE/data/catalog/default/provider.json" current-provider
+  assert_value "$LIVE/module.prop" version=current
+
+  printf '%s\n' '{}' > "$live_config"
+  printf '%s\n' 'new-provider' > "$LIVE/data/catalog/default/provider.json"
+  TEST_CONFIG_CHECK=1
+  export TEST_CONFIG_CHECK
+  : > "$CALL_LOG"
+  if commit_hot_update; then exit 1; fi
+  cmp "$stage_config" "$WORKDIR/previous-config.json"
+  assert_value "$STAGE/data/catalog/default/provider.json" current-provider
+  assert_value "$CALL_LOG" 'config check'
+  [ -e "$LIVE/update" ]
+  assert_value "$LIVE/module.prop" version=current
+
+  mv() {
+    case "$1" in */current/data/catalog) return 1 ;; esac
+    command mv "$@"
+  }
+  if copy_user_data_locked; then exit 1; fi
+  cmp "$stage_config" "$WORKDIR/previous-config.json"
+  assert_value "$STAGE/data/catalog/default/provider.json" current-provider
+  assert_value "$LIVE/data/catalog/default/provider.json" new-provider
+  [ -z "$(find "$STAGE" -name '.install-state.*' -print)" ]
+)
+
 test_live_wrapper_module_dir() (
   reset_modules
   NETPROXY_MODULE_DIR="$STAGE"
@@ -331,7 +446,7 @@ test_missing_inbound() (
   wait_volume_key() { VOLUME_KEY=timeout; }
   if choose_install_mode > "$WORKDIR/menu"; then exit 1; fi
   grep -Fq 'config/inbound/inbound.json' "$WORKDIR/menu"
-  grep -Fq '请选择仅保留节点与订阅或全新安装' "$WORKDIR/menu"
+  grep -Fq '请选择仅保留节点、订阅与策略或全新安装' "$WORKDIR/menu"
   if copy_user_data_locked; then exit 1; fi
   assert_inbound "$STAGE/config/inbound/inbound.json" package
   for mode in nodes fresh; do
@@ -364,7 +479,7 @@ test_missing_module() (
   wait_volume_key() { VOLUME_KEY=timeout; }
   if choose_install_mode > "$WORKDIR/menu"; then exit 1; fi
   grep -Fq 'config/module.json' "$WORKDIR/menu"
-  grep -Fq '请选择仅保留节点与订阅或全新安装' "$WORKDIR/menu"
+  grep -Fq '请选择仅保留节点、订阅与策略或全新安装' "$WORKDIR/menu"
   if copy_user_data_locked; then exit 1; fi
   assert_module "$STAGE/config/module.json" package
   for mode in nodes fresh; do
@@ -841,6 +956,7 @@ test_key_events
 test_key_output_descriptor
 test_snapshot_modes
 test_policy_preservation
+test_nodes_policy_snapshot
 test_live_wrapper_module_dir
 test_snapshot_failure
 test_snapshot_rename_failure

@@ -11,12 +11,14 @@ umask 077
 readonly MODULE_ID=netproxy
 readonly CONFIG_ENTRIES="config/module.json config/inbound/inbound.json config/singbox/config.json config/singbox/rules/local"
 readonly EXECUTABLE_FILES="bin/sing-box bin/netproxyctl action.sh netproxyctl service.sh uninstall.sh"
+readonly INSTALL_POLICY_DEFAULTS=runtime/.install-policy-defaults.json
 
 INSTALL_MODE=fresh
 LIVE_DIR=/data/adb/modules/netproxy
 PROXY_WAS_RUNNING=false
 SERVICE_STOPPED=false
 BACKGROUND=false
+HOT_UPDATE_SCHEDULED=false
 KEY_PID=""
 
 if [ "${1:-}" = --apply-update ]; then
@@ -168,7 +170,7 @@ choose_install_mode() {
   print_title "选择安装方式"
   local timeout=10
   while :; do
-    choose_volume_option "$timeout" "保留现有数据" "仅保留节点与订阅（配置恢复默认）" \
+    choose_volume_option "$timeout" "保留现有数据" "仅保留节点、订阅与策略（其余配置恢复默认）" \
       "全新安装（不保留现有数据）" || return 1
     case "$VOLUME_CHOICE" in
       1) INSTALL_MODE=preserve ;;
@@ -194,12 +196,12 @@ choose_install_mode() {
     local entry
     for entry in $CONFIG_ENTRIES; do
       [ -e "$LIVE_DIR/$entry" ] || {
-        print_error "当前用户配置不完整：$entry；请选择仅保留节点与订阅或全新安装"
+        print_error "当前用户配置不完整：$entry；请选择仅保留节点、订阅与策略或全新安装"
         return 1
       }
     done
     if grep -Eq '"selection"[[:space:]]*:' "$LIVE_DIR/config/module.json"; then
-      print_error "当前配置使用旧版节点选择格式；请备份后选择「仅保留节点与订阅（配置恢复默认）」"
+      print_error "当前配置使用旧版节点选择格式；请备份后选择「仅保留节点、订阅与策略（其余配置恢复默认）」"
       return 1
     fi
   fi
@@ -296,7 +298,7 @@ copy_catalog_state() {
 persistent_entries() {
   case "$INSTALL_MODE" in
     preserve) printf '%s\n' config data/catalog data/policies.json logs ;;
-    nodes) printf '%s\n' data/catalog data/policies.json logs ;;
+    nodes) printf '%s\n' config/singbox/config.json data/catalog data/policies.json logs ;;
     fresh) ;;
     *) return 1 ;;
   esac
@@ -317,7 +319,7 @@ rollback_snapshot() {
 }
 
 #######################################
-# 参数: 无。
+# 参数: 可选 check，提交后台 nodes 快照前检查合并后的配置。
 # 返回: 0=成功，1=复制或恢复失败；调用方必须持有数据锁。
 #######################################
 copy_user_data_locked() {
@@ -334,6 +336,11 @@ copy_user_data_locked() {
   snapshot="$(mktemp -d "$MODPATH/.install-state.XXXXXX")" || return 1
   : > "$snapshot/applied" || return 1
   for entry in $entries; do
+    if [ "$entry" = config/singbox/config.json ]; then
+      "$MODPATH/bin/netproxyctl" config merge-install-policies "$LIVE_DIR" "$MODPATH/$INSTALL_POLICY_DEFAULTS" \
+        "$snapshot/current/$entry" >/dev/null || { failed=true; break; }
+      continue
+    fi
     [ -e "$LIVE_DIR/$entry" ] || continue
     mkdir -p "$snapshot/current/$(dirname "$entry")" || { failed=true; break; }
     if [ "$entry" = data/catalog ]; then
@@ -363,6 +370,12 @@ copy_user_data_locked() {
       fi
       mv "$snapshot/current/$entry" "$MODPATH/$entry" || { failed=true; break; }
     done
+  fi
+  if [ "$failed" = false ] && [ "${1:-}" = check ] && [ "$INSTALL_MODE" = nodes ]; then
+    # 使用独立生命周期锁检查暂存目录；当前模块的锁由安装事务持有。
+    NETPROXY_MODULE_DIR="$MODPATH" NETPROXY_DEV_ROOT="$snapshot/check-state" \
+      "$MODPATH/bin/netproxyctl" config check > "$snapshot/check.log" 2>&1 \
+      || { write_log WARN failed module.policy_check_failed "后台合并的策略未通过配置检查，已取消更新"; failed=true; }
   fi
   if [ "$failed" = true ]; then
     rollback_snapshot "$snapshot" || return 1
@@ -456,7 +469,7 @@ write_log() {
 #######################################
 commit_hot_update() {
   local backup_dir="$(dirname "$LIVE_DIR")/.netproxy.install-backup.$$" entry
-  copy_user_data_locked && set_permissions || return 1
+  copy_user_data_locked check && set_permissions || return 1
   NETPROXY_MODULE_DIR="$MODPATH" "$MODPATH/bin/netproxyctl" api init >/dev/null 2>&1 || return 1
   rm -f "$MODPATH/data"/.catalog.netproxy-*.lock || return 1
   # 等待中的 Go 命令必须继续使用原来的锁，而不是目录切换后的第二个锁。
@@ -469,6 +482,7 @@ commit_hot_update() {
     done
   fi
   [ ! -e "$backup_dir" ] || return 1
+  [ "$INSTALL_MODE" != nodes ] || rm -f "$MODPATH/$INSTALL_POLICY_DEFAULTS" || return 1
   rm -f "$MODPATH/update" || return 1
   mv "$LIVE_DIR" "$backup_dir" || return 1
   if ! mv "$MODPATH" "$LIVE_DIR"; then
@@ -509,6 +523,7 @@ schedule_hot_update() {
   # stdin 持有脚本内容，安装器删除 customize.sh 或临时目录不影响后台提交。
   (launch_detached_root_shell -c "/system/bin/sh -s -- --apply-update '$$' '$MODPATH' '$LIVE_DIR' '$INSTALL_MODE'" \
     < "$MODPATH/customize.sh") >/dev/null 2>&1 &
+  HOT_UPDATE_SCHEDULED=true
 }
 
 # 参数: 无。
@@ -541,12 +556,16 @@ finish_install() {
   local result="$?"
   trap - EXIT HUP INT TERM
   stop_key_listener
+  if [ "$INSTALL_MODE" = nodes ] && [ "$HOT_UPDATE_SCHEDULED" = false ]; then
+    rm -f "$MODPATH/$INSTALL_POLICY_DEFAULTS"
+  fi
   [ ! -d "${INSTALL_TMP:-}" ] || rm -rf "$INSTALL_TMP"
   return "$result"
 }
 
 if [ "$BACKGROUND" = true ]; then
   if ! apply_hot_update; then
+    [ "$INSTALL_MODE" != nodes ] || rm -f "$MODPATH/$INSTALL_POLICY_DEFAULTS"
     write_log WARN failed module.update_failed "后台热更新未提交，保留暂存模块，由管理器下次开机处理"
     restore_live_service || write_log WARN failed service.restore_failed "安装前的 Worker 或服务恢复失败"
     exit 1
@@ -580,6 +599,11 @@ unzip -o "$ZIPFILE" -x 'META-INF/*' -d "$MODPATH" >/dev/null 2>&1 \
 install_bundled_manager || { print_error "管理器安装步骤失败"; exit 1; }
 print_title "安装模块"
 ui_print "  安装完成前请勿修改模块配置、节点或订阅"
+# 后台热更新在管理器退出后重新合并，不能从前台已合并的配置继续叠加。
+if [ "$INSTALL_MODE" = nodes ]; then
+  mkdir -p "$MODPATH/runtime" && cp "$MODPATH/config/singbox/config.json" "$MODPATH/$INSTALL_POLICY_DEFAULTS" \
+    || { print_error "保存新版策略合并基线失败"; exit 1; }
+fi
 synchronize_user_data && set_permissions || { print_error "保留用户数据或权限设置失败"; exit 1; }
 NETPROXY_MODULE_DIR="$MODPATH" "$MODPATH/bin/netproxyctl" api init > "$INSTALL_TMP/api.log" 2>&1 \
   || { print_error "管理接口凭据初始化失败，未替换当前模块"; exit 1; }

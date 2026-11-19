@@ -361,7 +361,7 @@ Go 生命周期控制器只将 `runtime/config.json` 传给核心。该只读文
 
 `config list` 的六个入站逻辑目标归类为 `category=inbound`；Prepare JSON 使用 `config` 路径字段与 `backend`。schema=1 字段与类别变化需同步 Shell、Go、Android、WebUI 与 tests。
 
-安装只处理当前数据布局，不读取、转换或清理旧版配置。保留现有数据包含整个用户配置目录（包括核心持久状态）、Catalog 与日志，但 `config/singbox/rules/remote` 始终使用本次安装包的内置规则；仅保留节点与订阅包含 Catalog 与日志；全新安装使用包内默认内容。保留模式要求对应数据完整，不能因缺失而静默回退默认配置。热切换前重新复制最新数据，不复制 Catalog staging 或可重建的运行时文件。
+安装只处理当前数据布局，不读取、转换或清理旧版配置。保留现有数据包含整个用户配置目录（包括核心持久状态）、Catalog 与日志，但 `config/singbox/rules/remote` 始终使用本次安装包的内置规则；仅保留节点、订阅与策略时保留 Catalog、日志及当前主配置中的原生策略组与 App 策略规则，其他设置使用本次安装包默认值；全新安装使用包内默认内容。保留模式要求对应数据完整，不能因缺失而静默回退默认配置。热切换前重新复制最新数据，不复制 Catalog staging 或可重建的运行时文件。
 
 保留全数据缺少当前 `config/module.json` 或 `config/inbound/inbound.json` 时明确失败；旧格式用户只能选择仅保留节点或全新安装，不检查版本、不读取或转换旧格式。快照锁固定顺序为生命周期、inbound、module、sing-box 主配置，再按既有统计和 Catalog 锁执行；目录切换保留 `config/inbound/inbound.json.lock`、`config/module.json.lock`、主配置与 Catalog 锁 inode。
 
