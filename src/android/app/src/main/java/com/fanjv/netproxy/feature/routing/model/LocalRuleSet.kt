@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonObject
 
 internal enum class LocalRuleSet(val tag: String) {
     Proxy("proxy"), Direct("direct"), Block("block"), Policy("route");
@@ -122,6 +123,34 @@ internal data class LocalRuleDocument(val root: JsonObject, private val nativeRo
     }
 
     fun remove(index: Int): LocalRuleDocument = withRules(rules.toMutableList().apply { removeAt(index) })
+
+    fun policyPackages(tag: String): List<String> =
+        editableIndices.flatMap { packageMatch(it, tag)?.values.orEmpty() }.distinct()
+
+    fun withPolicyPackages(tag: String, packages: List<String>): LocalRuleDocument {
+        val wanted = packages.toSet()
+        val added = packages.filterNot(policyPackages(tag).toSet()::contains)
+        val editable = editableIndices.toSet()
+        val updated = rules.mapIndexedNotNull { index, rule ->
+            val (target, match) = rule.policyRule()
+                ?.takeIf { index in editable && it.second.field == RuleField.PackageName }
+                ?: return@mapIndexedNotNull rule
+            val kept = if (target == tag) match.values.filter(wanted::contains)
+                else match.values.filterNot(wanted::contains)
+            when {
+                kept == match.values -> rule
+                kept.isEmpty() -> null
+                else -> JsonObject(rule.jsonObject + (RuleField.PackageName.key to JsonArray(kept.map(::JsonPrimitive))))
+            }
+        }
+        val document = withRules(updated)
+        return if (added.isEmpty()) document else document.replace(
+            null, RuleField.PackageName.policyRule(added.joinToString("\n"), tag)
+        )
+    }
+
+    private fun packageMatch(index: Int, tag: String): SimpleRule? =
+        rules[index].policyRule()?.takeIf { (target, rule) -> target == tag && rule.field == RuleField.PackageName }?.second
 
     private fun withRules(rules: List<JsonElement>): LocalRuleDocument {
         val updated = JsonObject(section + ("rules" to JsonArray(rules)))

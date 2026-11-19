@@ -7,6 +7,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -72,23 +74,26 @@ internal class PolicyRepository(
     private val config: ConfigRepository = ConfigRepository(client),
 ) {
     suspend fun openEditor(tag: String?): PolicyGroupDocument {
-        val snapshot = config.readSnapshot("singbox/outbounds")
-        val outbounds = parsePolicySection(snapshot.content, "outbounds")
-        val endpoints = parsePolicySection(config.read("singbox/endpoints"), "endpoints")
-        val nativeProviders = parsePolicySection(config.read("singbox/providers"), "providers")
+        val snapshot = config.readSnapshot("singbox/config.json")
+        val root = Json.parseToJsonElement(snapshot.content).jsonObject
+        val outbounds = root.policySection("outbounds")
+        val endpoints = root.policySection("endpoints")
+        val nativeProviders = root.policySection("providers")
             .map { it.text("tag") }
         val resources = client.read<List<CatalogGroupSummary>>("/subscriptions")
             .filter { it.nodeCount > 0 }
             .map { it.runtimeTag }
         return PolicyGroupDocument(
-            outbounds, snapshot.revision, tag,
+            root, snapshot.revision, tag,
             (outbounds + endpoints).map { it.text("tag") }.filter(String::isNotBlank).distinct(),
             (nativeProviders + resources).filter(String::isNotBlank).distinct(),
         )
     }
 
     suspend fun saveGroup(document: PolicyGroupDocument, draft: PolicyGroupDraft) {
-        config.apply("singbox/outbounds", document.updated(draft), document.revision)
+        val name = document.savedName(draft.tag)
+        val rename = document.originalTag?.takeUnless { it == name }?.let { it to name }
+        config.apply("singbox/config.json", document.updated(draft), document.revision, rename)
     }
 
     suspend fun deleteGroup(tag: String, type: String) {

@@ -228,7 +228,7 @@ func UpdateApp(ctx context.Context, options Options, action, value string) (data
 	if err != nil {
 		return AppPolicy{}, err
 	}
-	if _, err := applyConfigLocked(ctx, options, "inbound/app", options.InboundConfig, content, false, ""); err != nil {
+	if _, err := applyConfigLocked(ctx, options, "inbound/app", options.InboundConfig, content, false, "", nil); err != nil {
 		return AppPolicy{}, err
 	}
 	persisted = true

@@ -190,7 +190,7 @@ internal fun RoutingRulesScreen(
     var retainedDraft by remember { mutableStateOf<RuleDraft?>(null) }
     val draft = state.draft ?: retainedDraft
     SideEffect { if (state.draft != null) retainedDraft = state.draft }
-    OverlayDialog(show = state.draft != null, title = stringResource(if (draft?.index == null) R.string.routing_add else R.string.routing_edit),
+    OverlayDialog(show = state.draft != null, title = stringResource(if (draft?.origin == null) R.string.routing_add else R.string.routing_edit),
         onDismissRequest = viewModel::dismiss, onDismissFinished = { retainedDraft = null }) {
         if (draft != null) {
             val file = state.files.getValue(draft.target)
@@ -203,9 +203,9 @@ internal fun RoutingRulesScreen(
             Column(Modifier.heightIn(max = 500.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (draft.index == null) OverlayDropdownPreference(title = stringResource(R.string.routing_type),
+                    if (draft.field != null) OverlayDropdownPreference(title = stringResource(R.string.routing_type),
                         items = LocalRuleSet.entries.map { stringResource(it.title()) }, selectedIndex = draft.target.ordinal,
-                        enabled = !state.isSaving,
+                        enabled = state.canChangeTarget(draft),
                         insideMargin = PaddingValues(vertical = 12.dp),
                         onSelectedIndexChange = { viewModel.selectTarget(LocalRuleSet.entries[it]) })
                     else Text(stringResource(R.string.routing_type) + ": " + stringResource(draft.target.title()),
@@ -256,6 +256,12 @@ internal fun RoutingRulesScreen(
                     }
                     state.inputError?.let { Text(stringResource(it.message()), color = MiuixTheme.colorScheme.error, style = MiuixTheme.textStyles.body2) }
                     if (file.error.isNotEmpty() || file.requiresReload) RuleError(file, state, reload = { viewModel.refresh(discardDraft = true) })
+                    else draft.origin?.let { origin ->
+                        val source = state.files.getValue(origin.target)
+                        if (source.error.isNotEmpty() || source.requiresReload) {
+                            RuleError(source, state, reload = { viewModel.refresh(discardDraft = true) })
+                        }
+                    }
                     if (file.invalidDocument) AppDialogButton(stringResource(R.string.routing_raw), { rawEdit(draft.target) },
                         Modifier.fillMaxWidth(), enabled = !state.isLoading && !state.isSaving)
                 }
@@ -266,9 +272,9 @@ internal fun RoutingRulesScreen(
                     } else { rawEdit(draft.target) } },
                     enabled = if (draft.field != null) state.canSave(draft) else state.editable(draft.target),
                     confirmLabel = stringResource(if (draft.field != null) R.string.save_text else R.string.routing_raw))
-                draft.index?.let { index ->
-                    AppDialogButton(stringResource(R.string.common_delete), { viewModel.requestDelete(RuleIdentity(draft.target, index)) },
-                        Modifier.fillMaxWidth(), enabled = state.editable(draft.target),
+                draft.origin?.let { origin ->
+                    AppDialogButton(stringResource(R.string.common_delete), { viewModel.requestDelete(origin) },
+                        Modifier.fillMaxWidth(), enabled = state.editable(origin.target),
                         role = DialogActionRole.Destructive)
                 }
             }

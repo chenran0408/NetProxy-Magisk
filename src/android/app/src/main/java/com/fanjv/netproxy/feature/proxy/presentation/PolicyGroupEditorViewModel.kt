@@ -27,17 +27,17 @@ internal class PolicyGroupEditorViewModel(
 
     fun openEditor(tag: String?) {
         if (editState.value?.let { it.loading || it.document != null || it.saved } == true) return
-        editState.value = PolicyEditorState(tag)
+        editState.value = PolicyEditorState()
         viewModelScope.launch {
             try {
                 val document = repository.openEditor(tag)
                 ensureActive()
-                editState.value = PolicyEditorState(tag, document, document.initial, loading = false)
+                editState.value = PolicyEditorState(document, document.initial, loading = false)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
                 ensureActive()
-                editState.value = PolicyEditorState(tag, loading = false, error = error.toUiText())
+                editState.value = PolicyEditorState(loading = false, error = error.toUiText())
             }
         }
     }
@@ -72,7 +72,6 @@ internal class PolicyGroupEditorViewModel(
 }
 
 internal data class PolicyEditorState(
-    val originalTag: String?,
     val document: PolicyGroupDocument? = null,
     val draft: PolicyGroupDraft? = null,
     val loading: Boolean = true,
@@ -84,11 +83,6 @@ internal data class PolicyEditorState(
     val canSave: Boolean get() {
         val value = draft ?: return false
         val base = document ?: return false
-        val tag = originalTag ?: value.tag.trim()
-        return !loading && !saving && !conflict && !saved && value != base.initial &&
-            tag.isNotEmpty() && value.hasMembers && tag !in value.outbounds &&
-            value.type in base.typeChoices &&
-            (!value.addAuto || (value.type == "selector" && base.canAddAuto)) &&
-            (if (originalTag != null) value.tag == originalTag else tag !in base.memberTags)
+        return !loading && !saving && !conflict && !saved && value != base.initial && base.valid(value)
     }
 }

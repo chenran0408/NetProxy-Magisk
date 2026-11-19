@@ -14,6 +14,7 @@ import com.fanjv.netproxy.feature.routing.model.RuleInputError
 import com.fanjv.netproxy.feature.routing.model.policyRule
 import com.fanjv.netproxy.feature.routing.model.simpleRule
 import com.fanjv.netproxy.feature.settings.data.ConfigRepository
+import com.fanjv.netproxy.feature.settings.model.ConfigSnapshot
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,11 +29,13 @@ internal data class RuleIdentity(val target: LocalRuleSet, val index: Int)
 
 internal data class RuleDraft(
     val target: LocalRuleSet,
-    val index: Int? = null,
+    val origin: RuleIdentity? = null,
     val field: RuleField? = RuleField.DomainSuffix,
     val text: String = "",
     val policyTag: String? = null,
-)
+) {
+    val index: Int? get() = origin?.takeIf { it.target == target }?.index
+}
 
 internal data class RoutingPolicyTarget(val tag: String, val type: String)
 
@@ -63,11 +66,16 @@ internal data class RoutingRulesState(
     fun canAddTo(target: LocalRuleSet): Boolean = editable(target) && (target != LocalRuleSet.Policy ||
         (policyTargets.isNotEmpty() && files.getValue(target).document?.policyStart != null))
 
-    fun canSave(draft: RuleDraft): Boolean = editable(draft.target) && (draft.target != LocalRuleSet.Policy ||
+    fun canChangeTarget(draft: RuleDraft): Boolean = draft.field != null && !isLoading && !isSaving &&
+        (draft.origin == null || editable(draft.origin.target))
+
+    fun canSave(draft: RuleDraft): Boolean = editable(draft.target) &&
+        (draft.origin == null || editable(draft.origin.target)) && (draft.target != LocalRuleSet.Policy ||
         (policyTargets.any { it.tag == draft.policyTag } &&
             (draft.index != null || files.getValue(draft.target).document?.policyStart != null)))
 
-    fun showPageError(target: LocalRuleSet): Boolean = target != draft?.target && target != deleting?.target &&
+    fun showPageError(target: LocalRuleSet): Boolean = target != draft?.target && target != draft?.origin?.target &&
+        target != deleting?.target &&
         files.getValue(target).let { it.error.isNotEmpty() || it.requiresReload }
 
     fun editable(target: LocalRuleSet): Boolean = files.getValue(target).let {
@@ -87,9 +95,9 @@ internal class RoutingRulesViewModel(
     fun selectTarget(target: LocalRuleSet) {
         val current = state.value
         val draft = current.draft ?: return
-        if (draft.index != null || current.isLoading || current.isSaving) return
+        if (!current.canChangeTarget(draft)) return
         mutableState.update {
-            it.copy(draft = draft.copy(target = target, policyTag = null), inputError = null)
+            it.copy(draft = draft.copy(target = target), inputError = null)
         }
     }
 
@@ -155,7 +163,7 @@ internal class RoutingRulesViewModel(
         val rule = document.rules[identity.index]
         val policy = if (identity.target == LocalRuleSet.Policy) rule.policyRule() else null
         val simple = policy?.second ?: rule.simpleRule()
-        mutableState.update { it.copy(draft = RuleDraft(identity.target, identity.index, simple?.field,
+        mutableState.update { it.copy(draft = RuleDraft(identity.target, identity, simple?.field,
             simple?.values?.joinToString("\n").orEmpty(), policy?.first), inputError = null)
             .withFile(identity.target, it.files.getValue(identity.target).copy(error = "")) }
     }
@@ -194,36 +202,61 @@ internal class RoutingRulesViewModel(
         }
         val rule = if (draft.target == LocalRuleSet.Policy) field.policyRule(draft.text, requireNotNull(draft.policyTag))
             else field.rule(draft.text)
-        apply(draft.target, current.files.getValue(draft.target).document!!.replace(draft.index, rule))
+        val destination = current.files.getValue(draft.target).document!!.replace(draft.index, rule)
+        val origin = draft.origin
+        val documents = if (origin != null && origin.target != draft.target) {
+            val source = current.files.getValue(origin.target).document!!.remove(origin.index)
+            linkedMapOf(origin.target to source, draft.target to destination)
+        } else {
+            mapOf(draft.target to destination)
+        }
+        apply(draft.target, documents)
     }
 
     fun delete() {
         val current = state.value
         val identity = current.deleting ?: return
         if (!current.editable(identity.target)) return
-        apply(identity.target, current.files.getValue(identity.target).document!!.remove(identity.index))
+        val document = current.files.getValue(identity.target).document!!.remove(identity.index)
+        apply(identity.target, mapOf(identity.target to document))
     }
 
-    private fun apply(target: LocalRuleSet, document: LocalRuleDocument) {
+    private fun apply(target: LocalRuleSet, documents: Map<LocalRuleSet, LocalRuleDocument>) {
         val current = state.value
-        val file = current.files.getValue(target)
-        mutableState.update { it.copy(isSaving = true).withFile(target, file.copy(error = "")) }
+        val files = current.files.filterKeys { it in documents }
+        mutableState.update {
+            it.copy(isSaving = true, files = it.files + files.mapValues { (_, file) -> file.copy(error = "") })
+        }
         viewModelScope.launch {
             try {
-                val content = withContext(Dispatchers.Default) { document.content() }
-                val revision = repository.apply(target.target, content, file.revision)
-                mutableState.update { it.copy(isSaving = false, draft = null, deleting = null, inputError = null)
-                    .withFile(target, RuleFileState(document, revision)) }
+                val edits = withContext(Dispatchers.Default) {
+                    documents.mapValues { (key, document) ->
+                        ConfigSnapshot(document.content(), files.getValue(key).revision)
+                    }
+                }
+                val destination = edits.getValue(target)
+                val source = edits.keys.singleOrNull { it != target }
+                val revisions = if (source == null) {
+                    mapOf(target.target to repository.apply(target.target, destination.content, destination.revision))
+                } else {
+                    repository.moveRoutingRule(source.target, edits.getValue(source), target.target, destination)
+                }
+                val saved = documents.mapValues { (key, document) -> RuleFileState(document, revisions.getValue(key.target)) }
+                mutableState.update { it.copy(isSaving = false, draft = null, deleting = null, inputError = null,
+                    files = it.files + saved) }
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
                 val unchanged = if ((error as? ModuleApiException)?.resultCode == "config.conflict") false else try {
-                    repository.readSnapshot(target.target).revision == file.revision
+                    files.all { (key, file) -> repository.readSnapshot(key.target).revision == file.revision }
                 } catch (readError: Exception) {
                     if (readError is CancellationException) throw readError
                     false
                 }
                 // 仅确认原 revision 未变化时允许修正草稿重试，不拿新 revision 覆盖旧快照。
-                mutableState.update { it.copy(isSaving = false).withFile(target, file.copy(requiresReload = !unchanged, error = error.userMessage())) }
+                val failed = files.mapValues { (key, file) ->
+                    file.copy(requiresReload = !unchanged, error = if (key == target) error.userMessage() else "")
+                }
+                mutableState.update { it.copy(isSaving = false, files = it.files + failed) }
             }
         }
     }

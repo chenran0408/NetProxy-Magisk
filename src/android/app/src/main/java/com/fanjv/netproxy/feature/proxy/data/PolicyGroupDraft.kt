@@ -1,5 +1,7 @@
 package com.fanjv.netproxy.feature.proxy.data
 
+import com.fanjv.netproxy.feature.routing.model.LocalRuleDocument
+import com.fanjv.netproxy.feature.routing.model.RuleField
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -14,6 +16,11 @@ import kotlinx.serialization.json.jsonObject
 internal val editablePolicyTypes = setOf("selector", "urltest", "loadbalance")
 internal const val AUTO_POLICY_TAG = "Auto"
 
+private val builtInPolicyTags = setOf(
+    "Proxy", AUTO_POLICY_TAG, "AI", "GitHub", "YouTube", "TikTok", "Google FCM",
+    "Google", "Telegram", "Netflix", "Spotify", "Bilibili",
+)
+
 internal data class PolicyGroupDraft(
     val tag: String = "",
     val type: String = "selector",
@@ -26,6 +33,7 @@ internal data class PolicyGroupDraft(
     val testUrl: String = "",
     val testInterval: String = "",
     val addAuto: Boolean = false,
+    val appPackages: String = "",
 ) {
     val hasMembers: Boolean get() = outbounds.isNotEmpty() || providers.isNotEmpty() || useAll || addAuto
 
@@ -46,17 +54,26 @@ internal data class PolicyGroupDraft(
 }
 
 internal data class PolicyGroupDocument(
-    val outbounds: List<JsonObject>,
+    val root: JsonObject,
     val revision: String,
     val originalTag: String?,
     val memberTags: List<String>,
     val providerChoices: List<String>,
 ) {
+    private val outbounds = root.policySection("outbounds")
+    private val route = LocalRuleDocument(
+        JsonObject(mapOf("route" to (root["route"]?.takeUnless { it == JsonNull } ?: JsonObject(emptyMap())))), nativeRoute = true
+    )
+    val canEditName = originalTag !in builtInPolicyTags
+    val canEditPackages = canEditName && route.policyStart != null
+
     private val index = originalTag?.let { tag ->
         outbounds.indexOfFirst { it.text("tag") == tag }.also { require(it >= 0) }
     }
     private val original = index?.let(outbounds::get)
-    val initial = original?.let(PolicyGroupDraft::from) ?: PolicyGroupDraft()
+    val initial = original?.let(PolicyGroupDraft::from)?.copy(
+        appPackages = route.policyPackages(requireNotNull(originalTag)).joinToString("\n")
+    ) ?: PolicyGroupDraft()
     val blockTag = outbounds.firstOrNull { it.text("type") == "block" }?.text("tag")
     val typeChoices = when (initial.type) {
         "selector", "urltest" -> listOf("selector", "urltest")
@@ -68,13 +85,22 @@ internal data class PolicyGroupDocument(
         AUTO_POLICY_TAG !in memberTags && AUTO_POLICY_TAG !in initial.outbounds &&
         outbounds.any { it.text("tag") == "block" && it.text("type") == "block" }
 
+    fun savedName(name: String): String = if (name == originalTag) name else name.trim()
+
+    fun nameTaken(name: String): Boolean = savedName(name).let { it != originalTag && it in memberTags }
+
+    fun valid(draft: PolicyGroupDraft): Boolean {
+        val name = savedName(draft.tag)
+        return name.isNotEmpty() && !nameTaken(name) && (canEditName || name == originalTag) &&
+            draft.hasMembers && draft.outbounds.none { it == name || it == originalTag } &&
+            draft.type in typeChoices && (!draft.addAuto || (draft.type == "selector" && canAddAuto)) &&
+            (draft.appPackages == initial.appPackages || (canEditPackages &&
+                (draft.appPackages.isBlank() || RuleField.PackageName.inputError(draft.appPackages) == null)))
+    }
+
     fun updated(draft: PolicyGroupDraft): String {
-        val tag = originalTag ?: draft.tag.trim()
-        require(tag.isNotBlank() && draft.hasMembers && tag !in draft.outbounds)
-        require(draft.type in typeChoices)
-        require(originalTag == null || draft.tag == originalTag)
-        require(index != null || tag !in memberTags)
-        require(!draft.addAuto || (draft.type == "selector" && canAddAuto))
+        require(valid(draft))
+        val tag = savedName(draft.tag)
         val fields = original.orEmpty().toMutableMap()
         fields["tag"] = JsonPrimitive(tag)
         fields["type"] = JsonPrimitive(draft.type)
@@ -117,12 +143,22 @@ internal data class PolicyGroupDocument(
             "outbounds" to JsonArray(listOf(JsonPrimitive("block"))),
             "use_all_providers" to JsonPrimitive(true),
         )))
-        return JsonObject(mapOf("outbounds" to JsonArray(updated))).toString()
+        val fieldsWithGroup = root + ("outbounds" to JsonArray(updated))
+        val packageNames = RuleField.PackageName.values(draft.appPackages)
+        if (packageNames == RuleField.PackageName.values(initial.appPackages)) {
+            return JsonObject(fieldsWithGroup).toString()
+        }
+        // The module rewrites old outbound references when the group name changes.
+        val routed = route.withPolicyPackages(originalTag ?: tag, packageNames)
+        return JsonObject(fieldsWithGroup + ("route" to routed.root.getValue("route"))).toString()
     }
 }
 
 internal fun parsePolicySection(content: String, key: String): List<JsonObject> =
-    when (val value = Json.parseToJsonElement(content).jsonObject[key]) {
+    Json.parseToJsonElement(content).jsonObject.policySection(key)
+
+internal fun JsonObject.policySection(key: String): List<JsonObject> =
+    when (val value = get(key)) {
         null, JsonNull -> emptyList()
         else -> value.jsonArray.map(JsonElement::jsonObject)
     }

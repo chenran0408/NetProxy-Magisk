@@ -67,10 +67,31 @@ internal class ConfigRepository(
     suspend fun applyAutoStart(enabled: Boolean, revision: String): String =
         apply("module/auto_start", moduleJson.encodeToString(ModuleAutoStartConfig(enabled)), revision)
 
-    suspend fun apply(target: String, content: String, revision: String): String =
-        client.put("/config", buildJsonObject { put("content", content); put("revision", revision) },
-            mapOf("target" to target)).data.jsonObject["revision"]?.jsonPrimitive?.content
+    suspend fun apply(
+        target: String, content: String, revision: String, renamePolicyGroup: Pair<String, String>? = null,
+    ): String =
+        client.put("/config", buildJsonObject {
+            put("content", content)
+            put("revision", revision)
+            renamePolicyGroup?.let { (from, to) ->
+                put("rename_policy_group", buildJsonObject { put("from", from); put("to", to) })
+            }
+        }, mapOf("target" to target)).data.jsonObject["revision"]?.jsonPrimitive?.content
             ?: error("模块没有返回配置版本")
+
+    suspend fun moveRoutingRule(
+        fromTarget: String, from: ConfigSnapshot, toTarget: String, to: ConfigSnapshot,
+    ): Map<String, String> =
+        client.json.decodeFromJsonElement(client.put("/config/routing-rule", buildJsonObject {
+            put("from", routingRuleEdit(fromTarget, from))
+            put("to", routingRuleEdit(toTarget, to))
+        }).data)
+
+    private fun routingRuleEdit(target: String, snapshot: ConfigSnapshot): JsonObject = buildJsonObject {
+        put("target", target)
+        put("content", snapshot.content)
+        put("revision", snapshot.revision)
+    }
 
     suspend fun check() {
         client.post("/service/check")

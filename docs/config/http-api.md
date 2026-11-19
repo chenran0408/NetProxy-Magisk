@@ -94,6 +94,10 @@ await request('/config?target=' + target, 'PUT', {
 
 HTTP 保存必须提供读取时的 revision。发生 `config.conflict` 时重新读取并让用户处理冲突，不用旧草稿自动重试。候选内容遵循 CLI 的分区格式，例如 `inbound/app` 使用 `{"app": {...}}`。
 
+已有路由规则跨文档改目标时，使用 `PUT /config/routing-rule`。请求的 `from` 和 `to` 各包含 `target`、`revision` 和修改后的 `content`。目标允许三个本地快捷规则集或 `singbox/route`。模块核对两份 revision，在同一事务内保存，运行中的服务只应用一次；成功后 `data` 返回按目标索引的两个 revision。
+
+Android 策略组改名使用 `PUT /config?target=singbox/config.json`，请求额外携带 `rename_policy_group: {"from":"旧组名","to":"新组名"}`，并在候选 `content` 中更新组定义。模块在同一事务中更新原出站引用。删除仍被配置引用的策略组会返回 `409 policy.group_in_use`，消息包含引用位置。
+
 完整配置损坏时，读取 `module`、`inbound` 或 `singbox/config.json` 的原文和 revision，再提交完整有效内容；不能通过单个分区修复无法解析的整份 JSON。运行时配置保持只读。
 
 ## 接口列表
@@ -126,6 +130,7 @@ HTTP 保存必须提供读取时的 revision。发生 `config.conflict` 时重�
 | `POST /subscriptions/{id}/cancel` | 请求取消下载 |
 | `GET /configs` | 配置目标与可编辑状态 |
 | `GET/PUT /config?target=...` | 读取、保存配置 |
+| `PUT /config/routing-rule` | 在两份配置间移动路由规则 |
 | `POST /config/validate?target=...` | 仅校验候选，不保存 |
 | `GET /network/wifi-list` | 已保存的 Wi-Fi 名称 |
 | `GET /app-policy` | 当前应用策略；修改使用 `inbound/app` 配置目标 |
@@ -177,7 +182,7 @@ JSON 响应使用与 CLI 一致的 `schema=1`、`ok/code/message/data`。同时�
 - `400`：请求格式或参数错误。
 - `401/403`：凭据、Host 或 Origin 不允许。
 - `404`：接口或目标不存在。
-- `409`：revision 冲突或操作忙。
+- `409`：revision 冲突、资源仍被引用或操作忙。
 - `413`：请求正文超过上限。
 - `422`：已识别的配置或参数校验错误。
 - `502`：保存成功后运行时同步失败。

@@ -32,16 +32,17 @@ type configFileSnapshot struct {
 }
 
 type configApplyJournal struct {
-	Version    int                  `json:"version"`
-	Phase      string               `json:"phase"`
-	Static     []configFileSnapshot `json:"static"`
-	Runtime    []configFileSnapshot `json:"runtime"`
-	Catalog    []configFileSnapshot `json:"catalog,omitempty"`
-	WasRunning bool                 `json:"was_running"`
-	Backend    string               `json:"backend"`
-	Action     string               `json:"action"`
-	BootID     string               `json:"boot_id"`
-	Mode       string               `json:"mode,omitempty"`
+	Version        int                  `json:"version"`
+	Phase          string               `json:"phase"`
+	Static         []configFileSnapshot `json:"static"`
+	Runtime        []configFileSnapshot `json:"runtime"`
+	Catalog        []configFileSnapshot `json:"catalog,omitempty"`
+	WasRunning     bool                 `json:"was_running"`
+	Backend        string               `json:"backend"`
+	Action         string               `json:"action"`
+	BootID         string               `json:"boot_id"`
+	Mode           string               `json:"mode,omitempty"`
+	SelectionCache *configFileSnapshot  `json:"selection_cache,omitempty"`
 }
 
 type configApplyTransaction struct {
@@ -83,7 +84,7 @@ func lockConfigFiles(ctx context.Context, options Options, paths ...string) (Opt
 	return options, release, nil
 }
 
-func beginConfigApply(options Options, destination string) (*configApplyTransaction, error) {
+func beginConfigApply(options Options, destinations ...string) (*configApplyTransaction, error) {
 	if err := os.MkdirAll(options.RuntimeDir, 0o700); err != nil {
 		return nil, err
 	}
@@ -126,7 +127,7 @@ func beginConfigApply(options Options, destination string) (*configApplyTransact
 	if transaction.journal.WasRunning && state.ActiveBackend != "" {
 		transaction.journal.Backend = state.ActiveBackend
 	}
-	staticPaths := uniqueConfigPaths(destination, options.ModuleConfig)
+	staticPaths := uniqueConfigPaths(append(destinations, options.ModuleConfig)...)
 	for index, path := range staticPaths {
 		snapshot, err := createConfigSnapshot(directory, fmt.Sprintf("static-%d", index), path)
 		if err != nil {
@@ -355,6 +356,27 @@ func validateConfigJournal(options Options, journal configApplyJournal) error {
 			return fmt.Errorf("配置事务静态目标不匹配: %s", snapshot.Path)
 		}
 	}
+	if journal.SelectionCache != nil {
+		matched := false
+		for _, snapshot := range journal.Static {
+			if snapshot.Path != filepath.Clean(paths.SingBoxConfig(options.SingBoxDir)) {
+				continue
+			}
+			before, err := os.ReadFile(snapshot.Backup)
+			if err != nil {
+				return err
+			}
+			cache, err := readPolicySelectionCache(before, options.SingBoxDir)
+			if err != nil {
+				return err
+			}
+			matched = cache.Enabled && cache.Path == journal.SelectionCache.Path
+			break
+		}
+		if !matched {
+			return errors.New("配置事务的策略选择缓存与旧配置不匹配")
+		}
+	}
 	for _, snapshot := range journal.Runtime {
 		if filepath.Clean(snapshot.Path) != filepath.Clean(paths.RuntimeConfig(options.RuntimeDir)) {
 			return fmt.Errorf("配置事务运行时目标不匹配: %s", snapshot.Path)
@@ -391,6 +413,9 @@ func restoreConfigSnapshots(journal configApplyJournal) error {
 	var restoreErr error
 	for _, snapshot := range append(append([]configFileSnapshot{}, journal.Static...), journal.Runtime...) {
 		restoreErr = errors.Join(restoreErr, configSnapshotRestore(snapshot))
+	}
+	if journal.SelectionCache != nil {
+		restoreErr = errors.Join(restoreErr, configSnapshotRestore(*journal.SelectionCache))
 	}
 	return restoreErr
 }

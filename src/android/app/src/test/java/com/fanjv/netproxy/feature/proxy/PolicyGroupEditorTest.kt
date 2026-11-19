@@ -8,6 +8,7 @@ import com.fanjv.netproxy.feature.proxy.data.PolicyGroupDocument
 import com.fanjv.netproxy.feature.proxy.data.PolicyRegionPreset
 import com.fanjv.netproxy.feature.proxy.data.PolicyRepository
 import com.fanjv.netproxy.feature.proxy.data.parsePolicySection
+import com.fanjv.netproxy.feature.routing.model.LocalRuleDocument
 import com.fanjv.netproxy.feature.proxy.presentation.PolicyGroupEditorViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -16,8 +17,11 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -26,7 +30,7 @@ import org.junit.Test
 class PolicyGroupEditorTest {
     @Test fun regionPresetCreatesNativeUrlTestWithTheSelectedProvider() {
         val original = parsePolicySection(source, "outbounds")
-        val document = PolicyGroupDocument(original, "r1", null, listOf("direct", "Proxy", "block"), listOf("Local"))
+        val document = PolicyGroupDocument(outboundDocument(original), "r1", null, listOf("direct", "Proxy", "block"), listOf("Local"))
         val draft = PolicyRegionPreset.HK.applyTo(document.initial.copy(providers = listOf("Local")), "block")
         val updated = parsePolicySection(document.updated(draft), "outbounds")
 
@@ -57,7 +61,7 @@ class PolicyGroupEditorTest {
                 {"type":"block","tag":"block"}
             ]}""", "outbounds",
         )
-        val document = PolicyGroupDocument(original, "r1", "HK Auto", listOf("Proxy", "HK Auto", "block"), listOf("Local"))
+        val document = PolicyGroupDocument(outboundDocument(original), "r1", "HK Auto", listOf("Proxy", "HK Auto", "block"), listOf("Local"))
 
         val draft = PolicyRegionPreset.JP.applyTo(document.initial, "block", document.originalTag)
         val updated = parsePolicySection(document.updated(draft), "outbounds")
@@ -102,8 +106,10 @@ class PolicyGroupEditorTest {
     @Test fun addingAutoPreservesExistingDefaultsAndOtherOutbounds() {
         val original = parsePolicySection(source, "outbounds")
         val tags = listOf("direct", "Proxy", "block")
-        val document = PolicyGroupDocument(original, "r1", "Proxy", tags, emptyList())
+        val document = PolicyGroupDocument(outboundDocument(original), "r1", "Proxy", tags, emptyList())
         assertTrue(document.canAddAuto)
+        assertFalse(document.canEditName)
+        assertFalse(document.valid(document.initial.copy(tag = "Other")))
 
         val updated = parsePolicySection(document.updated(document.initial.copy(addAuto = true)), "outbounds")
         assertEquals(original[0], updated[0])
@@ -115,14 +121,14 @@ class PolicyGroupEditorTest {
             """{"outbounds":[{"type":"urltest","tag":"Auto","outbounds":["block"],"use_all_providers":true}]}""",
             "outbounds",
         ).single(), updated.last())
-        assertFalse(PolicyGroupDocument(updated, "r2", "Proxy", tags + "Auto", emptyList()).canAddAuto)
-        assertFalse(PolicyGroupDocument(original, "r1", "Proxy", tags + "Auto", emptyList()).canAddAuto)
-        assertFalse(PolicyGroupDocument(original.take(2), "r1", "Proxy", tags.take(2), emptyList()).canAddAuto)
+        assertFalse(PolicyGroupDocument(outboundDocument(updated), "r2", "Proxy", tags + "Auto", emptyList()).canAddAuto)
+        assertFalse(PolicyGroupDocument(outboundDocument(original), "r1", "Proxy", tags + "Auto", emptyList()).canAddAuto)
+        assertFalse(PolicyGroupDocument(outboundDocument(original.take(2)), "r1", "Proxy", tags.take(2), emptyList()).canAddAuto)
     }
 
     @Test fun updatesOnlyTheTargetGroupAndPreservesNativeFields() {
         val original = parsePolicySection(source, "outbounds")
-        val document = PolicyGroupDocument(original, "r1", "Proxy", listOf("Proxy", "direct"), emptyList())
+        val document = PolicyGroupDocument(outboundDocument(original), "r1", "Proxy", listOf("Proxy", "direct"), emptyList())
         val result = parsePolicySection(
             document.updated(document.initial.copy(providers = listOf("Local"), include = "JP")),
             "outbounds",
@@ -135,23 +141,21 @@ class PolicyGroupEditorTest {
         assertEquals(JsonPrimitive("JP"), result[1]["include"])
     }
 
-    @Test fun createsAGroupThroughTheRevisionCheckedOutboundSection() = runBlocking {
+    @Test fun createsAGroupThroughTheRevisionCheckedMainConfig() = runBlocking {
         var writes = 0
         val client = ModuleApiClient(TestApiTransport { request ->
             if (request.mutation) {
                 writes++
-                request.assertConfig("PUT", "singbox/outbounds", "r1")
+                request.assertConfig("PUT", "singbox/config.json", "r1")
                 val groups = parsePolicySection(request.text("content"), "outbounds")
                 assertEquals(JsonPrimitive("Auto"), groups.last()["tag"])
                 assertEquals(JsonPrimitive("urltest"), groups.last()["type"])
                 assertEquals(JsonPrimitive("3m"), groups.last()["interval"])
                 apiSuccess("""{"revision":"r2"}""")
             } else when (request.path) {
-                "/config" -> when (request.target) {
-                    "singbox/outbounds" -> configResponse(source)
-                    "singbox/endpoints" -> configResponse("""{"endpoints":[{"tag":"WireGuard"}]}""")
-                    "singbox/providers" -> configResponse("""{"providers":[{"tag":"native"}]}""")
-                    else -> error("Unexpected target")
+                "/config" -> {
+                    request.assertConfig("GET", "singbox/config.json")
+                    configResponse(source.dropLast(1) + ""","endpoints":[{"tag":"WireGuard"}],"providers":[{"tag":"native"}]}""")
                 }
                 "/subscriptions" -> apiSuccess(
                     """[{"id":"default","name":"Local","type":"local","node_count":2,"runtime_tag":"Local"}]"""
@@ -176,7 +180,7 @@ class PolicyGroupEditorTest {
             when {
                 request.mutation -> {
                     writes++
-                    request.assertConfig("PUT", "singbox/outbounds", "r1")
+                    request.assertConfig("PUT", "singbox/config.json", "r1")
                     val groups = parsePolicySection(request.text("content"), "outbounds")
                     assertEquals(original.first(), groups.first())
                     assertEquals(original.last(), groups.last())
@@ -189,7 +193,7 @@ class PolicyGroupEditorTest {
                     apiSuccess("""{"revision":"r2"}""")
                 }
                 request.path == "/subscriptions" -> apiSuccess("[]")
-                request.target == "singbox/outbounds" -> configResponse(source)
+                request.target == "singbox/config.json" -> configResponse(source)
                 else -> configResponse("{}")
             }
         }, scope)
@@ -213,7 +217,7 @@ class PolicyGroupEditorTest {
                 "include":"JP","url":"https://example.invalid","interval":"3m","tolerance":50,
                 "idle_timeout":"10m","fallback":{"enabled":true},"interrupt_exist_connections":true}]}
         """.trimIndent(), "outbounds")
-        val doc = PolicyGroupDocument(original, "r1", "Work", listOf("direct", "Work"), listOf("Local"))
+        val doc = PolicyGroupDocument(outboundDocument(original), "r1", "Work", listOf("direct", "Work"), listOf("Local"))
         assertEquals(original, parsePolicySection(doc.updated(doc.initial), "outbounds"))
         val next = parsePolicySection(
             doc.updated(doc.initial.copy(type = "selector", defaultMember = "direct")), "outbounds",
@@ -233,14 +237,14 @@ class PolicyGroupEditorTest {
             when {
                 request.mutation -> {
                     writes++
-                    request.assertConfig("PUT", "singbox/outbounds", "r1")
+                    request.assertConfig("PUT", "singbox/config.json", "r1")
                     val groups = parsePolicySection(request.text("content"), "outbounds")
                     assertEquals(JsonArray(listOf(JsonPrimitive("direct"), JsonPrimitive("Auto"))), groups[1]["outbounds"])
                     assertEquals(JsonPrimitive("Auto"), groups.last()["tag"])
                     ModuleHttpResponse(409, """{"schema":1,"ok":false,"code":"config.conflict","message":"Reload","data":null}""")
                 }
                 request.path == "/subscriptions" -> apiSuccess("[]")
-                request.target == "singbox/outbounds" -> configResponse(source)
+                request.target == "singbox/config.json" -> configResponse(source)
                 else -> configResponse("{}")
             }
         }, scope)
@@ -259,6 +263,52 @@ class PolicyGroupEditorTest {
             scope.cancel()
         }
     }
+
+    @Test fun renamesCustomGroupAndUpdatesPackagesInOneRevisionCheckedWrite() = runBlocking {
+        val content = """
+            {"outbounds":[{"type":"direct","tag":"direct"},
+              {"type":"selector","tag":"Work","outbounds":["direct"]},
+              {"type":"selector","tag":"Other","outbounds":["direct"]}],
+             "route":{"rules":[
+               {"type":"default","action":"route","package_name":["com.mountains.old","com.mountains.keep"],"outbound":"Work"},
+               {"type":"default","action":"route","domain":["example.invalid"],"outbound":"Other"}
+             ]},
+             "log":{"level":"info"}}
+        """.trimIndent()
+        var writes = 0
+        val client = ModuleApiClient(TestApiTransport { request ->
+            when {
+                request.mutation -> {
+                    writes++
+                    request.assertConfig("PUT", "singbox/config.json", "r1")
+                    val candidate = Json.parseToJsonElement(request.text("content")).jsonObject
+                    val groups = parsePolicySection(candidate.toString(), "outbounds")
+                    assertEquals(JsonPrimitive("Japan"), groups[1]["tag"])
+                    val route = LocalRuleDocument.parse(candidate.toString(), nativeRoute = true)
+                    assertEquals(listOf("com.mountains.keep", "com.mountains.hills"), route.policyPackages("Work"))
+                    assertEquals(JsonPrimitive("Other"), route.rules[1].jsonObject["outbound"])
+                    assertEquals(JsonPrimitive("info"), candidate.getValue("log").jsonObject["level"])
+                    assertEquals(JsonPrimitive("Work"), request.body.getValue("rename_policy_group").jsonObject["from"])
+                    assertEquals(JsonPrimitive("Japan"), request.body.getValue("rename_policy_group").jsonObject["to"])
+                    apiSuccess("""{"revision":"r2"}""")
+                }
+                request.path == "/subscriptions" -> apiSuccess("[]")
+                else -> {
+                    request.assertConfig("GET", "singbox/config.json")
+                    configResponse(content)
+                }
+            }
+        })
+        val repository = PolicyRepository(client)
+        val document = repository.openEditor("Work")
+        assertEquals("com.mountains.old\ncom.mountains.keep", document.initial.appPackages)
+        assertFalse(document.valid(document.initial.copy(tag = "Other")))
+        assertFalse(document.valid(document.initial.copy(appPackages = "0:com.mountains.hills")))
+        repository.saveGroup(document, document.initial.copy(tag = "Japan", appPackages = "com.mountains.keep\ncom.mountains.hills"))
+        assertEquals(1, writes)
+    }
+
+    private fun outboundDocument(outbounds: List<JsonObject>) = JsonObject(mapOf("outbounds" to JsonArray(outbounds)))
 
     private fun configResponse(content: String) =
         apiSuccess("""{"revision":"r1","content":${JsonPrimitive(content)}}""")

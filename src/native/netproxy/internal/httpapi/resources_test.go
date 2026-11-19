@@ -270,6 +270,66 @@ func TestResourcesConfigRevisionAndValidation(t *testing.T) {
 	}
 }
 
+func TestResourcesPolicyGroupDeletionReportsTheBlockingRule(t *testing.T) {
+	server := resourceFixture(t)
+	const before = `{"outbounds":[{"type":"selector","tag":"Bilibili"},{"type":"direct","tag":"direct"}],
+		"route":{"rules":[{"rule_set":"geosite/bilibili","action":"route","outbound":"Bilibili"}]}}`
+	resourceWriteFile(t, paths.SingBoxConfig(server.options.SingBoxDir), before)
+	target := "/api/v1/config?target=singbox/outbounds"
+	var snapshot map[string]string
+	resourceAssertSuccess(t, server, "GET", target, "", "config.read", &snapshot)
+	body := resourceJSON(t, map[string]string{
+		"revision": snapshot["revision"],
+		"content":  `{"outbounds":[{"type":"direct","tag":"direct"}]}`,
+	})
+	response, result := resourceRequest(t, server, "PUT", target, body)
+	if response.Code != http.StatusConflict || result.Code != "policy.group_in_use" ||
+		!strings.Contains(result.Message, "route.rules[0]") || !strings.Contains(result.Message, "geosite/bilibili") {
+		t.Fatalf("delete did not report its reference: %s", response.Body.String())
+	}
+	saved, err := os.ReadFile(paths.SingBoxConfig(server.options.SingBoxDir))
+	if err != nil || string(saved) != before {
+		t.Fatalf("blocked deletion changed the configuration: %v", err)
+	}
+}
+
+func TestResourcesRoutingRuleMoveRejectsInvalidOrStaleEdits(t *testing.T) {
+	server := resourceFixture(t)
+	const local = "singbox/rules/local/direct.json"
+	const policy = "singbox/route"
+	const originalLocal = `{"version":1,"rules":[{"domain":"example.com"}]}`
+	localPath, err := module.ResolveConfig(server.options, local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resourceWriteFile(t, localPath, originalLocal)
+	before, err := module.ReadConfig(server.options, local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	from := module.RoutingRuleEdit{Target: local, Revision: before["revision"], Content: `{"version":1,"rules":[]}`}
+	to := module.RoutingRuleEdit{Target: policy, Revision: "stale", Content: `{"route":{}}`}
+	path := "/api/v1/config/routing-rule"
+	for _, invalid := range []module.RoutingRuleEdit{
+		{Target: policy, Content: to.Content},
+		{Target: "/outside", Revision: to.Revision, Content: to.Content},
+		from,
+	} {
+		response, result := resourceRequest(t, server, "PUT", path, resourceJSON(t, map[string]module.RoutingRuleEdit{"from": from, "to": invalid}))
+		if response.Code != http.StatusBadRequest || result.Code != "usage.invalid" {
+			t.Fatalf("接受了错误的移动请求: %s", response.Body.String())
+		}
+	}
+	response, result := resourceRequest(t, server, "PUT", path, resourceJSON(t, map[string]module.RoutingRuleEdit{"from": from, "to": to}))
+	if response.Code != http.StatusConflict || result.Code != "config.conflict" {
+		t.Fatalf("移动规则未返回冲突: %s", response.Body.String())
+	}
+	after, err := os.ReadFile(localPath)
+	if err != nil || string(after) != originalLocal {
+		t.Fatalf("冲突修改了源文件: %q %v", after, err)
+	}
+}
+
 func TestResourcesConfigRequiresRevisionAndRejectsPaths(t *testing.T) {
 	server := resourceFixture(t)
 	for _, body := range []string{

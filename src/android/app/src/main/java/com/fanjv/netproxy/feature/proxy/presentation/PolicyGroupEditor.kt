@@ -50,6 +50,7 @@ import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
 import com.fanjv.netproxy.core.ui.resolve
 import com.fanjv.netproxy.feature.proxy.data.PolicyRegionPreset
 import com.fanjv.netproxy.feature.proxy.data.regionPreset
+import com.fanjv.netproxy.feature.routing.model.RuleField
 import java.util.Locale
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Icon
@@ -152,7 +153,7 @@ internal fun PolicyGroupEditorScreen(
                 if (draft == null || document == null) return@LazyColumn
 
                 groupedCardSection("basics", { stringResource(R.string.basic_settings) }, buildList {
-                    if (editing) {
+                    if (!document.canEditName) {
                         add(CardItem("name") {
                             BasicComponent(title = stringResource(R.string.policy_group_name), summary = draft.tag)
                         })
@@ -161,7 +162,7 @@ internal fun PolicyGroupEditorScreen(
                             PolicyField(R.string.policy_group_name, draft.tag, enabled, first = true) { value ->
                                 change { it.copy(tag = value) }
                             }
-                            if (draft.tag.trim() in document.memberTags) {
+                            if (document.nameTaken(draft.tag)) {
                                 Text(
                                     stringResource(R.string.policy_group_duplicate),
                                     Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
@@ -171,6 +172,26 @@ internal fun PolicyGroupEditorScreen(
                             }
                         })
                     }
+                    if (document.canEditName) add(CardItem("app_packages") {
+                        if (document.canEditPackages) {
+                            PolicyField(R.string.routing_package_name, draft.appPackages, enabled, singleLine = false) { value ->
+                                change { it.copy(appPackages = value) }
+                            }
+                            val invalid = draft.appPackages.isNotBlank() &&
+                                RuleField.PackageName.inputError(draft.appPackages) != null
+                            Text(
+                                stringResource(if (invalid) R.string.routing_error_package_name else R.string.routing_package_name_hint),
+                                Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+                                color = if (invalid) colorScheme.error else colorScheme.onSurfaceVariantSummary,
+                                style = MiuixTheme.textStyles.footnote1,
+                            )
+                        } else {
+                            BasicComponent(
+                                title = stringResource(R.string.routing_package_name),
+                                summary = stringResource(R.string.routing_policy_order_unsupported),
+                            )
+                        }
+                    })
                     document.blockTag?.let { blockTag ->
                         add(CardItem("region") {
                             val locale = LocalConfiguration.current.locales[0]
@@ -183,7 +204,7 @@ internal fun PolicyGroupEditorScreen(
                                 enabled = enabled,
                                 onSelectedIndexChange = { index ->
                                     change { current ->
-                                        if (index > 0) presets[index - 1].applyTo(current, blockTag, document.originalTag)
+                                        if (index > 0) presets[index - 1].applyTo(current, blockTag, current.tag.takeIf { editing })
                                         else if (current.regionPreset != null) current.copy(include = "")
                                         else current
                                     }
@@ -330,14 +351,16 @@ internal fun PolicyGroupEditorScreen(
 
 @Composable
 private fun PolicyField(
-    label: Int, value: String, enabled: Boolean, first: Boolean = false, onChange: (String) -> Unit,
+    label: Int, value: String, enabled: Boolean, first: Boolean = false, singleLine: Boolean = true,
+    onChange: (String) -> Unit,
 ) {
     TextField(
         value = value,
         onValueChange = onChange,
         label = stringResource(label),
         enabled = enabled,
-        singleLine = true,
+        singleLine = singleLine,
+        maxLines = if (singleLine) 1 else 5,
         modifier = Modifier.fillMaxWidth().padding(start = 12.dp, top = if (first) 12.dp else 0.dp, end = 12.dp, bottom = 12.dp),
     )
 }

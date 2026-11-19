@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json/jsontext"
+	"errors"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -64,6 +65,7 @@ func (s *Server) registerResources() {
 	s.route("GET /api/v1/configs", resourceReadTimeout, false, s.listConfigs)
 	s.route("GET /api/v1/config", resourceReadTimeout, false, s.readConfig)
 	s.route("PUT /api/v1/config", resourceWriteTimeout, true, s.saveConfig)
+	s.route("PUT /api/v1/config/routing-rule", resourceWriteTimeout, true, s.moveRoutingRule)
 	s.route("POST /api/v1/config/validate", resourceWriteTimeout, true, s.validateConfig)
 	s.route("GET /api/v1/network/wifi-list", resourceReadTimeout, false, s.listWiFi)
 	s.route("GET /api/v1/app-policy", resourceReadTimeout, false, s.readAppPolicy)
@@ -492,6 +494,24 @@ func (s *Server) saveConfig(ctx context.Context, r *http.Request) (contract.Resu
 	return s.applyConfigContent(ctx, r, false)
 }
 
+func (s *Server) moveRoutingRule(ctx context.Context, r *http.Request) (contract.Result, error) {
+	if _, err := resourceQuery(r); err != nil {
+		return contract.Result{}, err
+	}
+	var input struct {
+		From module.RoutingRuleEdit `json:"from"`
+		To   module.RoutingRuleEdit `json:"to"`
+	}
+	if err := decodeRequest(r, &input); err != nil {
+		return contract.Result{}, err
+	}
+	revisions, err := module.ApplyRoutingRuleMove(ctx, s.options, input.From, input.To)
+	if errors.Is(err, module.ErrRoutingRuleMoveInvalid) {
+		return contract.Result{}, invalid(err.Error())
+	}
+	return contract.Success("config.apply", "路由规则已保存", revisions), err
+}
+
 func (s *Server) validateConfig(ctx context.Context, r *http.Request) (contract.Result, error) {
 	return s.applyConfigContent(ctx, r, true)
 }
@@ -502,8 +522,9 @@ func (s *Server) applyConfigContent(ctx context.Context, r *http.Request, valida
 		return contract.Result{}, err
 	}
 	var input struct {
-		Revision string  `json:"revision"`
-		Content  *string `json:"content"`
+		Revision          string                    `json:"revision"`
+		Content           *string                   `json:"content"`
+		RenamePolicyGroup *module.PolicyGroupRename `json:"rename_policy_group,omitempty"`
 	}
 	if err := decodeRequest(r, &input); err != nil {
 		return contract.Result{}, err
@@ -511,7 +532,7 @@ func (s *Server) applyConfigContent(ctx context.Context, r *http.Request, valida
 	if strings.TrimSpace(input.Revision) == "" || input.Content == nil {
 		return contract.Result{}, invalid("必须提供读取时的 revision 与 content 字符串")
 	}
-	revision, err := module.ApplyConfigContent(ctx, s.options, target, []byte(*input.Content), validateOnly, input.Revision)
+	revision, err := module.ApplyConfigEdit(ctx, s.options, target, []byte(*input.Content), validateOnly, input.Revision, input.RenamePolicyGroup)
 	action := "apply"
 	if validateOnly {
 		action = "validate"

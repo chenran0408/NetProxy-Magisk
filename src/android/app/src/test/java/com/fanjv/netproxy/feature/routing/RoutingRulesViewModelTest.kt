@@ -21,6 +21,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -57,11 +58,27 @@ class RoutingRulesViewModelTest {
                 "PUT" -> {
                     gate?.let { entered.complete(Unit); check(it.await(5, TimeUnit.SECONDS)) }
                     applyError?.let { throw it }
-                    val target = request.target
-                    assertEquals(revisions[target] ?: revision, request.text("revision"))
-                    contents[target] = request.text("content")
-                    revisions[target] = "saved-revision"
-                    JsonObject(mapOf("revision" to JsonPrimitive("saved-revision")))
+                    if (request.path == "/config/routing-rule") {
+                        val edits = listOf("from", "to").associate { side ->
+                            val edit = request.body.getValue(side) as JsonObject
+                            edit.getValue("target").jsonPrimitive.content to edit
+                        }
+                        edits.forEach { (target, edit) ->
+                            assertEquals(revisions[target] ?: revision, edit.getValue("revision").jsonPrimitive.content)
+                        }
+                        JsonObject(edits.mapValues { (target, edit) ->
+                            contents[target] = edit.getValue("content").jsonPrimitive.content
+                            val savedRevision = "moved-$target-${calls.size}"
+                            revisions[target] = savedRevision
+                            JsonPrimitive(savedRevision)
+                        })
+                    } else {
+                        val target = request.target
+                        assertEquals(revisions[target] ?: revision, request.text("revision"))
+                        contents[target] = request.text("content")
+                        revisions[target] = "saved-revision"
+                        JsonObject(mapOf("revision" to JsonPrimitive("saved-revision")))
+                    }
                 }
                 else -> error("Unexpected command")
             }
@@ -139,7 +156,7 @@ class RoutingRulesViewModelTest {
         assertFalse(transport.calls.any { it.path != "/config" })
     }
 
-    @Test fun editingAndDeletingUseFileIdentityAndCannotMoveExistingRules() = runBlocking {
+    @Test fun editingAndDeletingUseFileIdentity() = runBlocking {
         val transport = Transport()
         transport.contents[LocalRuleSet.Proxy.target] = """{"version":1,"rules":[{"domain":"proxy.example"}]}"""
         transport.revisions[LocalRuleSet.Direct.target] = "direct-revision"
@@ -150,7 +167,6 @@ class RoutingRulesViewModelTest {
         val advanced = loaded.file(LocalRuleSet.Direct).document!!.rules[1]
         vm.edit(direct)
         assertEquals("example.com", vm.state.value.draft!!.text)
-        vm.selectTarget(LocalRuleSet.Block)
         assertEquals(LocalRuleSet.Direct, vm.state.value.draft!!.target)
         vm.updateDraft(RuleField.Domain, "direct.example")
         vm.save()
@@ -166,6 +182,67 @@ class RoutingRulesViewModelTest {
         assertEquals(loaded.file(LocalRuleSet.Proxy), deleted.file(LocalRuleSet.Proxy))
         assertEquals(loaded.file(LocalRuleSet.Block), deleted.file(LocalRuleSet.Block))
         assertEquals(advanced, LocalRuleDocument.parse(transport.contents.getValue(LocalRuleSet.Direct.target)).rules.single())
+    }
+
+    @Test fun existingRuleMovesBetweenLocalAndPolicyWithBothRevisions() = runBlocking {
+        val transport = Transport()
+        transport.revisions[LocalRuleSet.Direct.target] = "direct-revision"
+        transport.revisions[LocalRuleSet.Policy.target] = "policy-revision"
+        val vm = model(this, transport)
+        vm.refresh()
+        val loaded = vm.loaded()
+        val original = RuleIdentity(LocalRuleSet.Direct, 0)
+        val advanced = loaded.file(LocalRuleSet.Direct).document!!.rules[1]
+        vm.edit(original)
+        vm.selectTarget(LocalRuleSet.Policy)
+        assertEquals(original, vm.state.value.draft!!.origin)
+        assertFalse(vm.state.value.canSave(vm.state.value.draft!!))
+        vm.selectPolicy("AI")
+        vm.save()
+        val moved = vm.saved()
+        assertNull(moved.draft)
+        assertEquals(listOf(advanced), moved.file(LocalRuleSet.Direct).document!!.rules.toList())
+        assertEquals(transport.revisions.getValue(LocalRuleSet.Direct.target), moved.file(LocalRuleSet.Direct).revision)
+        val policy = moved.file(LocalRuleSet.Policy)
+        assertEquals(transport.revisions.getValue(LocalRuleSet.Policy.target), policy.revision)
+        val policyDocument = policy.document!!
+        val index = policyDocument.editableIndices.single()
+        val (group, match) = policyDocument.rules[index].policyRule()!!
+        assertEquals("AI", group)
+        assertEquals(listOf("example.com"), match.values)
+        assertEquals("/config/routing-rule", transport.calls.last().path)
+
+        vm.edit(RuleIdentity(LocalRuleSet.Policy, index))
+        vm.selectTarget(LocalRuleSet.Block)
+        vm.save()
+        val returned = vm.saved()
+        assertNull(returned.draft)
+        assertEquals(loaded.file(LocalRuleSet.Policy).document, returned.file(LocalRuleSet.Policy).document)
+        assertEquals(listOf("example.com"), returned.file(LocalRuleSet.Block).document!!.rules.last().simpleRule()!!.values)
+        assertEquals(2, transport.calls.count { it.method == "PUT" && it.path == "/config/routing-rule" })
+    }
+
+    @Test fun moveConflictPreservesOriginalAndDestinationDocumentsAndRequiresReload() = runBlocking {
+        val transport = Transport()
+        val vm = model(this, transport)
+        vm.refresh()
+        val loaded = vm.loaded()
+        val original = RuleIdentity(LocalRuleSet.Direct, 0)
+        vm.edit(original)
+        vm.selectTarget(LocalRuleSet.Block)
+        transport.applyError = ModuleApiException("config.conflict", "destination changed")
+        vm.save()
+        val failed = vm.saved()
+        assertEquals(original, failed.draft!!.origin)
+        assertEquals(LocalRuleSet.Block, failed.draft!!.target)
+        assertFalse(failed.canSave(failed.draft!!))
+        for (target in listOf(LocalRuleSet.Direct, LocalRuleSet.Block)) {
+            assertEquals(loaded.file(target).document, failed.file(target).document)
+            assertEquals(loaded.file(target).revision, failed.file(target).revision)
+            assertTrue(failed.file(target).requiresReload)
+        }
+        assertEquals("destination changed", failed.file(LocalRuleSet.Block).error)
+        assertEquals("/config/routing-rule", transport.calls.last().path)
     }
 
     @Test fun partialFailureKeepsHealthyRulesAndPerFileErrorsAndRefreshRecovers() = runBlocking {

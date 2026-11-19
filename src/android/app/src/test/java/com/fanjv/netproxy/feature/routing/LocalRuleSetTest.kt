@@ -33,6 +33,26 @@ class LocalRuleSetTest {
         assertEquals(original, edited.remove(6).remove(5))
     }
 
+    @Test fun rebindingPackagesRemovesOnlyConflictingSimpleRules() {
+        val original = LocalRuleDocument.parse(
+            defaultRoute.replace(
+                """{"rule_set":"geosite/category-ai-!cn","action":"route","outbound":"AI"},""",
+                """
+                {"type":"default","action":"route","package_name":["com.example.hills","com.example.other"],"outbound":"Work"},
+                {"type":"default","action":"route","package_name":"com.example.video","outbound":"Work"},
+                {"type":"default","action":"route","package_name":"com.example.video","outbound":"Japan"},
+                {"type":"default","action":"route","package_name":"com.example.unrelated","outbound":"Work"},
+                {"type":"default","action":"route","package_name":"com.example.hills","port":443,"outbound":"Work"},
+                """.trimIndent(),
+            ), nativeRoute = true,
+        )
+        val updated = original.withPolicyPackages("Japan", listOf("com.example.hills", "com.example.video"))
+        assertEquals(listOf("com.example.other", "com.example.unrelated"), updated.policyPackages("Work"))
+        assertEquals(setOf("com.example.hills", "com.example.video"), updated.policyPackages("Japan").toSet())
+        assertEquals(original.rules.size, updated.rules.size)
+        assertEquals(original.rules.takeLast(2), updated.rules.takeLast(2))
+    }
+
     @Test fun customRouteWithoutSafeInsertionPointIsNotModified() {
         val document = LocalRuleDocument.parse(
             """{"route":{"rules":[{"ip_is_private":true,"outbound":"direct"}]}}""", nativeRoute = true,

@@ -232,7 +232,15 @@ func logConfigApply(options Options, validateOnly bool, err error) {
 
 // ApplyConfigContent 通过候选文件、校验和原子替换应用原始配置内容。
 func ApplyConfigContent(ctx context.Context, options Options, target string, replacement []byte, validateOnly bool, expectedRevision string) (revision string, err error) {
+	return ApplyConfigEdit(ctx, options, target, replacement, validateOnly, expectedRevision, nil)
+}
+
+// ApplyConfigEdit can also update native outbound references in a revision-checked full document.
+func ApplyConfigEdit(ctx context.Context, options Options, target string, replacement []byte, validateOnly bool, expectedRevision string, rename *PolicyGroupRename) (revision string, err error) {
 	defer func() { logConfigApply(options, validateOnly, err) }()
+	if rename != nil && (target != "singbox/config.json" || expectedRevision == "") {
+		return "", errors.New("策略组改名必须提供主配置与 revision")
+	}
 	destination, err := ResolveConfig(options, target)
 	if err != nil {
 		return "", err
@@ -251,10 +259,10 @@ func ApplyConfigContent(ctx context.Context, options Options, target string, rep
 		return "", err
 	}
 	defer release()
-	return applyConfigLocked(ctx, options, target, destination, replacement, validateOnly, expectedRevision)
+	return applyConfigLocked(ctx, options, target, destination, replacement, validateOnly, expectedRevision, rename)
 }
 
-func lockConfigApply(ctx context.Context, options Options, destination string, validateOnly bool) (Options, func(), error) {
+func lockConfigApply(ctx context.Context, options Options, destination string, validateOnly bool, additional ...string) (Options, func(), error) {
 	var lifecycle *lifecycleLock
 	var err error
 	if !validateOnly {
@@ -267,7 +275,8 @@ func lockConfigApply(ctx context.Context, options Options, destination string, v
 			return options, nil, err
 		}
 	}
-	options, release, err := lockConfigFiles(ctx, options, destination, options.ModuleConfig, options.InboundConfig, paths.SingBoxConfig(options.SingBoxDir))
+	files := append([]string{destination, options.ModuleConfig, options.InboundConfig, paths.SingBoxConfig(options.SingBoxDir)}, additional...)
+	options, release, err := lockConfigFiles(ctx, options, files...)
 	if err != nil {
 		if lifecycle != nil {
 			lifecycle.release()
@@ -282,7 +291,7 @@ func lockConfigApply(ctx context.Context, options Options, destination string, v
 	}, nil
 }
 
-func applyConfigLocked(ctx context.Context, options Options, target, destination string, replacement []byte, validateOnly bool, expectedRevision string) (string, error) {
+func applyConfigLocked(ctx context.Context, options Options, target, destination string, replacement []byte, validateOnly bool, expectedRevision string, rename *PolicyGroupRename) (string, error) {
 	// 锁内读取最新主配置后只替换目标分区，不能把客户端的整份旧快照写回。
 	section := configSection(target)
 	var current []byte
@@ -309,8 +318,15 @@ func applyConfigLocked(ctx context.Context, options Options, target, destination
 	if err != nil {
 		return "", err
 	}
-	if target == "singbox/outbounds" {
-		if err := validateRemovedRouteGroups(current, content); err != nil {
+	if rename != nil {
+		content, err = renamePolicyGroupReferences(current, content, *rename)
+		if err != nil {
+			return "", err
+		}
+		revision = configRevision(content)
+	}
+	if target == "singbox/outbounds" || rename != nil {
+		if err := validateRemovedPolicyGroups(current, content); err != nil {
 			return "", err
 		}
 	}
@@ -341,6 +357,24 @@ func applyConfigLocked(ctx context.Context, options Options, target, destination
 	}
 	if validateOnly {
 		return revision, nil
+	}
+	var selectionCache policySelectionCache
+	if rename != nil {
+		previous, err := readPolicySelectionCache(current, options.SingBoxDir)
+		if err != nil {
+			return "", err
+		}
+		next, err := readPolicySelectionCache(content, options.SingBoxDir)
+		if err != nil {
+			return "", err
+		}
+		if previous.Enabled && previous == next {
+			if _, err := os.Stat(previous.Path); err == nil {
+				selectionCache = previous
+			} else if !os.IsNotExist(err) {
+				return "", err
+			}
+		}
 	}
 	applyRuntime := true
 	switchBackend := false
@@ -406,7 +440,7 @@ func applyConfigLocked(ctx context.Context, options Options, target, destination
 	if !applyRuntime {
 		transaction.journal.Action = "none"
 	}
-	if switchBackend && transaction.journal.WasRunning {
+	if (switchBackend || selectionCache.Enabled) && transaction.journal.WasRunning {
 		transaction.journal.Action = "switch"
 	}
 	if err := transaction.writeJournal(); err != nil {
@@ -418,6 +452,11 @@ func applyConfigLocked(ctx context.Context, options Options, target, destination
 		}
 		if err := configStop(ctx, options); err != nil {
 			return "", rollbackConfigApply(options, transaction, err)
+		}
+	}
+	if selectionCache.Enabled {
+		if err := transaction.renamePolicySelection(selectionCache, *rename); err != nil {
+			return "", rollbackConfigApply(options, transaction, fmt.Errorf("迁移策略组选择失败: %w", err))
 		}
 	}
 	if err := os.Rename(candidatePath, destination); err != nil {
@@ -673,7 +712,7 @@ func tunRoutingMarkConflict(field string) error {
 }
 
 // validateSingBoxTree 在临时配置树中检查候选静态配置，避免直接覆盖用户正在使用的文件。
-func validateSingBoxTree(ctx context.Context, options Options, candidate string) error {
+func validateSingBoxTree(ctx context.Context, options Options, candidate string, localRules ...stagedConfigFile) error {
 	temporary, err := os.MkdirTemp("", "netproxy-config-check-")
 	if err != nil {
 		return err
@@ -681,6 +720,12 @@ func validateSingBoxTree(ctx context.Context, options Options, candidate string)
 	defer os.RemoveAll(temporary)
 	if err := copyDirectory(paths.SingBoxRulesDir(options.SingBoxDir), paths.SingBoxRulesDir(temporary)); err != nil {
 		return err
+	}
+	for _, local := range localRules {
+		path := filepath.Join(paths.SingBoxLocalRulesDir(temporary), filepath.Base(local.destination))
+		if err := copyFile(path, local.candidate, 0o600); err != nil {
+			return err
+		}
 	}
 	candidatePath := paths.SingBoxConfig(temporary)
 	if err := copyFile(candidatePath, candidate, 0o600); err != nil {
@@ -718,6 +763,10 @@ func copyDirectory(source, destination string) error {
 		target := filepath.Join(destination, relative)
 		if entry.IsDir() {
 			return os.MkdirAll(target, 0o700)
+		}
+		// 规则配置锁和暂存文件不属于校验快照。
+		if strings.HasSuffix(entry.Name(), ".json.lock") || strings.HasPrefix(entry.Name(), ".config-candidate-") {
+			return nil
 		}
 		return copyFile(target, path, 0o600)
 	})
