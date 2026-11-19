@@ -33,6 +33,7 @@ concurrency:
 
 jobs:
   changes:
+    if: github.repository == 'Fanju6/NetProxy-Magisk'
     name: 判断受影响组件
     runs-on: ubuntu-latest
     timeout-minutes: 3

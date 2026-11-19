@@ -15,6 +15,7 @@ concurrency:
 
 jobs:
   preflight:
+    if: github.repository == 'Fanju6/NetProxy-Magisk'
     name: 验证发布版本与更新日志
     runs-on: ubuntu-latest
     timeout-minutes: 3
