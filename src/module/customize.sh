@@ -168,7 +168,7 @@ choose_install_mode() {
   print_title "选择安装方式"
   local timeout=10
   while :; do
-    choose_volume_option "$timeout" "保留现有数据" "仅保留节点、订阅与策略（配置恢复默认）" \
+    choose_volume_option "$timeout" "保留现有数据" "仅保留节点与订阅（配置恢复默认）" \
       "全新安装（不保留现有数据）" || return 1
     case "$VOLUME_CHOICE" in
       1) INSTALL_MODE=preserve ;;
@@ -194,10 +194,14 @@ choose_install_mode() {
     local entry
     for entry in $CONFIG_ENTRIES; do
       [ -e "$LIVE_DIR/$entry" ] || {
-        print_error "当前用户配置不完整：$entry；请选择仅保留节点、订阅与策略或全新安装"
+        print_error "当前用户配置不完整：$entry；请选择仅保留节点与订阅或全新安装"
         return 1
       }
     done
+    if grep -Eq '"selection"[[:space:]]*:' "$LIVE_DIR/config/module.json"; then
+      print_error "当前配置使用旧版节点选择格式；请备份后选择「仅保留节点与订阅（配置恢复默认）」"
+      return 1
+    fi
   fi
   print_ok "安装方式已确认"
 }

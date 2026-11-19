@@ -156,6 +156,14 @@ test_install_choices() (
     fi
     assert_module "$LIVE/config/module.json" current
   done
+  printf '%s\n' '{"auto_start":false,"selection":{"group_id":"default","node_tag":""}}' > "$LIVE/config/module.json"
+  CHOICES=timeout
+  if choose_install_mode > "$WORKDIR/menu"; then exit 1; fi
+  grep -Fq '当前配置使用旧版节点选择格式' "$WORKDIR/menu"
+  CHOICES='up down'
+  choose_install_mode > "$WORKDIR/menu"
+  [ "$INSTALL_MODE" = nodes ]
+  module_fixture current > "$LIVE/config/module.json"
   rm "$LIVE/config/singbox/config.json"
   CHOICES=timeout
   if choose_install_mode > "$WORKDIR/menu"; then exit 1; fi
@@ -323,7 +331,7 @@ test_missing_inbound() (
   wait_volume_key() { VOLUME_KEY=timeout; }
   if choose_install_mode > "$WORKDIR/menu"; then exit 1; fi
   grep -Fq 'config/inbound/inbound.json' "$WORKDIR/menu"
-  grep -Fq '请选择仅保留节点、订阅与策略或全新安装' "$WORKDIR/menu"
+  grep -Fq '请选择仅保留节点与订阅或全新安装' "$WORKDIR/menu"
   if copy_user_data_locked; then exit 1; fi
   assert_inbound "$STAGE/config/inbound/inbound.json" package
   for mode in nodes fresh; do
@@ -356,7 +364,7 @@ test_missing_module() (
   wait_volume_key() { VOLUME_KEY=timeout; }
   if choose_install_mode > "$WORKDIR/menu"; then exit 1; fi
   grep -Fq 'config/module.json' "$WORKDIR/menu"
-  grep -Fq '请选择仅保留节点、订阅与策略或全新安装' "$WORKDIR/menu"
+  grep -Fq '请选择仅保留节点与订阅或全新安装' "$WORKDIR/menu"
   if copy_user_data_locked; then exit 1; fi
   assert_module "$STAGE/config/module.json" package
   for mode in nodes fresh; do
