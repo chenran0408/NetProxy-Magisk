@@ -1,0 +1,164 @@
+diff --git a/protocol/group/selector.go b/protocol/group/selector.go
+--- a/protocol/group/selector.go
++++ b/protocol/group/selector.go
+@@ -137,7 +137,7 @@
+ 		tags = append(tags, detour.Tag())
+ 		outboundByTag[detour.Tag()] = detour
+ 	}
+-	selected, err := s.outboundSelect(outboundByTag, tags)
++	selected, err := s.outboundSelect(outboundByTag, tags, nil)
+ 	if err != nil {
+ 		return err
+ 	}
+@@ -192,13 +192,10 @@
+ 		s.providerAccess.Unlock()
+ 		return false
+ 	}
+-	if s.selected.Swap(detour) == detour {
+-		s.providerAccess.Unlock()
+-		return true
+-	}
++	previous := s.selected.Swap(detour)
+ 	if s.Tag() != "" {
+ 		cacheFile := service.FromContext[adapter.CacheFile](s.ctx)
+-		if cacheFile != nil {
++		if cacheFile != nil && (previous != detour || cacheFile.LoadSelected(s.Tag()) != tag) {
+ 			err := cacheFile.StoreSelected(s.Tag(), tag)
+ 			if err != nil {
+ 				s.logger.Error("store selected: ", err)
+@@ -206,6 +203,9 @@
+ 		}
+ 	}
+ 	s.providerAccess.Unlock()
++	if previous == detour {
++		return true
++	}
+ 	s.interruptGroup.Interrupt(s.interruptExternalConnections)
+ 	if s.history != nil {
+ 		s.history.NotifyUpdated()
+@@ -266,7 +266,7 @@
+ 		outboundByTag[detour.Tag()] = detour
+ 	}
+ 	s.stateAccess.Lock()
+-	detour, err := s.outboundSelect(outboundByTag, tags)
++	detour, err := s.outboundSelect(outboundByTag, tags, tags[len(s.Dependencies()):])
+ 	if err != nil {
+ 		s.stateAccess.Unlock()
+ 		s.providerAccess.Unlock()
+@@ -285,7 +285,8 @@
+ 	return nil
+ }
+ 
+-func (s *Selector) outboundSelect(outbounds map[string]adapter.Outbound, tags []string) (adapter.Outbound, error) {
++func (s *Selector) outboundSelect(outbounds map[string]adapter.Outbound, tags, providerMembers []string) (adapter.Outbound, error) {
++	var lostSelection bool
+ 	if s.Tag() != "" {
+ 		cacheFile := service.FromContext[adapter.CacheFile](s.ctx)
+ 		if cacheFile != nil {
+@@ -295,20 +296,41 @@
+ 				if loaded {
+ 					return detour, nil
+ 				}
++				lostSelection = true
+ 			}
+ 		}
+ 	}
+ 
+ 	if previous := s.selected.Load(); previous != nil {
+-		if current, loaded := outbounds[previous.Tag()]; loaded {
++		if current, loaded := outbounds[previous.Tag()]; loaded && (!lostSelection || current.Type() != C.TypeBlock) {
+ 			return current, nil
+ 		}
++		lostSelection = lostSelection || previous.Tag() != "Compatible"
+ 	}
+ 	if s.defaultTag != "" {
+ 		detour, loaded := outbounds[s.defaultTag]
+ 		if !loaded {
+ 			return nil, E.New("default outbound not found: ", s.defaultTag)
+ 		}
++		// A cached Provider member may still load later in startup. Keep the
++		// cache intact and recover only once there are replacement members.
++		if detour.Type() == C.TypeBlock && lostSelection && len(providerMembers) != 0 {
++			for _, tag := range s.Dependencies() {
++				if group, ok := outbounds[tag].(*URLTest); ok {
++					if slices.ContainsFunc(group.All(), func(tag string) bool {
++						return slices.Contains(providerMembers, tag)
++					}) {
++						return group, nil
++					}
++				}
++			}
++			for _, tag := range providerMembers {
++				candidate := outbounds[tag]
++				if candidate.Type() != C.TypeBlock && candidate.Type() != C.TypeDirect {
++					return candidate, nil
++				}
++			}
++		}
+ 		return detour, nil
+ 	}
+ 
+diff --git a/protocol/group/selector_provider_fallback_test.go b/protocol/group/selector_provider_fallback_test.go
+new file mode 100644
+--- /dev/null
++++ b/protocol/group/selector_provider_fallback_test.go
+@@ -0,0 +1,59 @@
++package group
++
++import (
++	"testing"
++
++	"github.com/sagernet/sing-box/adapter"
++	"github.com/sagernet/sing-box/adapter/outbound"
++	"github.com/sagernet/sing-box/common/interrupt"
++	"github.com/sagernet/sing-box/common/urltest"
++	C "github.com/sagernet/sing-box/constant"
++	N "github.com/sagernet/sing/common/network"
++)
++
++func TestSelectorProviderRemovalKeepsAUsableRoute(t *testing.T) {
++	node := func(kind, tag string) adapter.Outbound {
++		return &startupTestOutbound{Adapter: outbound.NewAdapter(kind, tag, []string{N.NetworkTCP}, nil)}
++	}
++	a, b := node(C.TypeHTTP, "Provider/A"), node(C.TypeHTTP, "Provider/B")
++	block, direct := node(C.TypeBlock, "block"), node(C.TypeDirect, "direct")
++	auto := &URLTest{
++		Adapter: outbound.NewAdapter(C.TypeURLTest, "Auto", nil, []string{"block"}),
++		group:   &URLTestGroup{history: urltest.NewHistoryStorage(), interruptGroup: interrupt.NewGroup()},
++	}
++	auto.group.replaceOutbounds([]adapter.Outbound{block, b})
++	outbounds := map[string]adapter.Outbound{b.Tag(): b, block.Tag(): block, direct.Tag(): direct, auto.Tag(): auto}
++	dependencies := []string{block.Tag(), direct.Tag(), auto.Tag()}
++	selector := &Selector{Adapter: outbound.NewAdapter(C.TypeSelector, "", nil, dependencies), defaultTag: block.Tag()}
++
++	for _, test := range []struct {
++		name     string
++		previous adapter.Outbound
++		members  []string
++		want     adapter.Outbound
++	}{
++		{"initial selection", nil, nil, block},
++		{"remaining Auto members", a, []string{b.Tag()}, auto},
++		{"no members", a, nil, block},
++		{"keep manual node", b, []string{b.Tag()}, b},
++		{"keep explicit block", block, []string{b.Tag()}, block},
++		{"keep explicit direct", direct, []string{b.Tag()}, direct},
++	} {
++		t.Run(test.name, func(t *testing.T) {
++			selector.selected.Store(test.previous)
++			got, err := selector.outboundSelect(outbounds, dependencies, test.members)
++			if err != nil {
++				t.Fatal(err)
++			}
++			assertSelected(t, test.want, got)
++		})
++	}
++
++	auto.group.replaceOutbounds([]adapter.Outbound{block})
++	selector.selected.Store(a)
++	got, err := selector.outboundSelect(outbounds, dependencies, []string{b.Tag()})
++	if err != nil {
++		t.Fatal(err)
++	}
++	assertSelected(t, b, got)
++}

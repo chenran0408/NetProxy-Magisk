@@ -1,0 +1,112 @@
+diff --git a/protocol/group/urltest.go b/protocol/group/urltest.go
+--- a/protocol/group/urltest.go
++++ b/protocol/group/urltest.go
+@@ -493,13 +493,21 @@
+ 		return fallbackIgnoreOutbound, true
+ 	}
+ 	if minOutbound == nil {
++		// With no probe history, try the first supported candidate before the reject placeholder.
++		var blockFallback adapter.Outbound
+ 		for _, detour := range outbounds {
+ 			if !common.Contains(detour.Network(), network) {
+ 				continue
+ 			}
++			if detour.Type() == C.TypeBlock {
++				if blockFallback == nil {
++					blockFallback = detour
++				}
++				continue
++			}
+ 			return detour, false
+ 		}
+-		return nil, false
++		return blockFallback, false
+ 	}
+ 	return minOutbound, true
+ }
+@@ -780,12 +788,12 @@
+ 	if !containsOutbound(outbounds, selectedOutboundUDP) {
+ 		g.selectedOutboundUDP.Store(nil)
+ 	}
+-	if g.selectedOutboundTCP.Load() == nil {
++	if current := g.selectedOutboundTCP.Load(); current == nil || current.Type() == C.TypeBlock {
+ 		if outbound, _ := g.Select(N.NetworkTCP); outbound != nil {
+ 			g.selectedOutboundTCP.Store(outbound)
+ 		}
+ 	}
+-	if g.selectedOutboundUDP.Load() == nil {
++	if current := g.selectedOutboundUDP.Load(); current == nil || current.Type() == C.TypeBlock {
+ 		if outbound, _ := g.Select(N.NetworkUDP); outbound != nil {
+ 			g.selectedOutboundUDP.Store(outbound)
+ 		}
+diff --git a/protocol/group/pre_match_test.go b/protocol/group/pre_match_test.go
+--- a/protocol/group/pre_match_test.go
++++ b/protocol/group/pre_match_test.go
+@@ -48,6 +48,8 @@
+ 	tag string
+ }
+ 
++func (o *preMatchTestOutbound) Type() string { return "http" }
++
+ func (o *preMatchTestOutbound) Tag() string {
+ 	return o.tag
+ }
+diff --git a/protocol/group/urltest_startup_test.go b/protocol/group/urltest_startup_test.go
+new file mode 100644
+--- /dev/null
++++ b/protocol/group/urltest_startup_test.go
+@@ -0,0 +1,54 @@
++package group
++
++import (
++	"testing"
++
++	"github.com/sagernet/sing-box/adapter"
++	adapterOutbound "github.com/sagernet/sing-box/adapter/outbound"
++	"github.com/sagernet/sing-box/common/interrupt"
++	"github.com/sagernet/sing-box/common/urltest"
++	C "github.com/sagernet/sing-box/constant"
++	N "github.com/sagernet/sing/common/network"
++)
++
++type startupTestOutbound struct {
++	adapter.Outbound
++	adapterOutbound.Adapter
++}
++
++func (o *startupTestOutbound) Type() string           { return o.Adapter.Type() }
++func (o *startupTestOutbound) Tag() string            { return o.Adapter.Tag() }
++func (o *startupTestOutbound) Network() []string      { return o.Adapter.Network() }
++func (o *startupTestOutbound) Dependencies() []string { return o.Adapter.Dependencies() }
++
++func TestURLTestStartupPrefersProxyOverBlock(t *testing.T) {
++	block := &startupTestOutbound{Adapter: adapterOutbound.NewAdapter(C.TypeBlock, "deny", []string{N.NetworkTCP, N.NetworkUDP}, nil)}
++	tcp := &startupTestOutbound{Adapter: adapterOutbound.NewAdapter(C.TypeHTTP, "tcp-proxy", []string{N.NetworkTCP}, nil)}
++	both := &startupTestOutbound{Adapter: adapterOutbound.NewAdapter(C.TypeSOCKS, "tcp-udp-proxy", []string{N.NetworkTCP, N.NetworkUDP}, nil)}
++	group := &URLTestGroup{
++		history:        urltest.NewHistoryStorage(),
++		interruptGroup: interrupt.NewGroup(),
++	}
++	group.replaceOutbounds([]adapter.Outbound{block})
++	assertSelected(t, block, group.selectedOutboundTCP.Load())
++	assertSelected(t, block, group.selectedOutboundUDP.Load())
++
++	group.replaceOutbounds([]adapter.Outbound{block, tcp, both})
++	assertSelected(t, tcp, group.selectedOutboundTCP.Load())
++	assertSelected(t, both, group.selectedOutboundUDP.Load())
++
++	group.history.StoreURLTestHistory(both.Tag(), &adapter.URLTestHistory{Delay: 23})
++	group.performUpdateCheck()
++	assertSelected(t, both, group.selectedOutboundTCP.Load())
++
++	group.replaceOutbounds([]adapter.Outbound{block})
++	assertSelected(t, block, group.selectedOutboundTCP.Load())
++	assertSelected(t, block, group.selectedOutboundUDP.Load())
++}
++
++func assertSelected(t *testing.T, want, got adapter.Outbound) {
++	t.Helper()
++	if got != want {
++		t.Fatalf("selected %v, want %v", got, want)
++	}
++}

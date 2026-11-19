@@ -129,6 +129,9 @@ jobs:
             old_size="$(stat -c '%s' "$SING_BOX_TARGET")"
           fi
 
+          git -C .sing-box-source apply \
+            "$GITHUB_WORKSPACE/.github/patches/sing-box-urltest-startup.patch" \
+            "$GITHUB_WORKSPACE/.github/patches/sing-box-selector-provider-fallback.patch"
           make -C .sing-box-source build
           test -s .sing-box-source/sing-box
           file .sing-box-source/sing-box | grep -q 'ARM aarch64'
