@@ -11,6 +11,8 @@
     <string name="policy_delete_group_summary">删除「%1$s」？节点和订阅会保留。如果其他配置仍引用此组，请先移除引用。</string>
     <string name="policy_edit_group">编辑策略组</string>
     <string name="policy_group_name">组名</string>
+    <string name="policy_region_preset">地区自动选择</string>
+    <string name="policy_region_custom">自定义</string>
     <string name="policy_group_type">策略组类型</string>
     <string name="policy_auto_select">自动选择</string>
     <string name="policy_add_auto">添加自动选择</string>

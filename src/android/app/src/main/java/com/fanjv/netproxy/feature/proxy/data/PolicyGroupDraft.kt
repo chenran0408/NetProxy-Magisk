@@ -57,6 +57,7 @@ internal data class PolicyGroupDocument(
     }
     private val original = index?.let(outbounds::get)
     val initial = original?.let(PolicyGroupDraft::from) ?: PolicyGroupDraft()
+    val blockTag = outbounds.firstOrNull { it.text("type") == "block" }?.text("tag")
     val typeChoices = when (initial.type) {
         "selector", "urltest" -> listOf("selector", "urltest")
         "loadbalance" -> listOf("selector", "urltest", "loadbalance")

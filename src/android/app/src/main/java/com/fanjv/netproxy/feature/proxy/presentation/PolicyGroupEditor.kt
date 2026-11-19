@@ -32,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -47,6 +48,9 @@ import com.fanjv.netproxy.core.ui.component.CardItem
 import com.fanjv.netproxy.core.ui.component.groupedCardSection
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
 import com.fanjv.netproxy.core.ui.resolve
+import com.fanjv.netproxy.feature.proxy.data.PolicyRegionPreset
+import com.fanjv.netproxy.feature.proxy.data.regionPreset
+import java.util.Locale
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Icon
 import com.fanjv.netproxy.core.ui.component.AppBarButton as IconButton
@@ -153,6 +157,25 @@ internal fun PolicyGroupEditorScreen(
                             BasicComponent(title = stringResource(R.string.policy_group_name), summary = draft.tag)
                         })
                     } else {
+                        document.blockTag?.let { blockTag ->
+                            add(CardItem("region") {
+                                val locale = LocalConfiguration.current.locales[0]
+                                val presets = PolicyRegionPreset.entries
+                                OverlayDropdownPreference(
+                                    title = stringResource(R.string.policy_region_preset),
+                                    items = listOf(stringResource(R.string.policy_region_custom)) +
+                                        presets.map { Locale.Builder().setRegion(it.name).build().getDisplayCountry(locale) },
+                                    selectedIndex = (draft.regionPreset?.ordinal ?: -1) + 1,
+                                    enabled = enabled,
+                                    onSelectedIndexChange = { index ->
+                                        change { current ->
+                                            if (index == 0) current.copy(include = "") else
+                                                presets[index - 1].applyTo(current, blockTag)
+                                        }
+                                    },
+                                )
+                            })
+                        }
                         add(CardItem("name") {
                             PolicyField(R.string.policy_group_name, draft.tag, enabled, first = true) { value ->
                                 change { it.copy(tag = value) }

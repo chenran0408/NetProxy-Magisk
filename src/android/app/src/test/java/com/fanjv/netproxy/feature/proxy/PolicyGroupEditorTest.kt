@@ -5,6 +5,7 @@ import com.fanjv.netproxy.core.api.ModuleHttpResponse
 import com.fanjv.netproxy.core.api.TestApiTransport
 import com.fanjv.netproxy.core.api.apiSuccess
 import com.fanjv.netproxy.feature.proxy.data.PolicyGroupDocument
+import com.fanjv.netproxy.feature.proxy.data.PolicyRegionPreset
 import com.fanjv.netproxy.feature.proxy.data.PolicyRepository
 import com.fanjv.netproxy.feature.proxy.data.parsePolicySection
 import com.fanjv.netproxy.feature.proxy.presentation.PolicyGroupEditorViewModel
@@ -23,6 +24,30 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PolicyGroupEditorTest {
+    @Test fun regionPresetCreatesNativeUrlTestWithTheSelectedProvider() {
+        val original = parsePolicySection(source, "outbounds")
+        val document = PolicyGroupDocument(original, "r1", null, listOf("direct", "Proxy", "block"), listOf("Local"))
+        val draft = PolicyRegionPreset.HK.applyTo(document.initial.copy(providers = listOf("Local")), "block")
+        val updated = parsePolicySection(document.updated(draft), "outbounds")
+
+        assertEquals(original, updated.dropLast(1))
+        assertEquals(JsonPrimitive("HK Auto"), updated.last()["tag"])
+        assertEquals(JsonPrimitive("urltest"), updated.last()["type"])
+        assertEquals(JsonArray(listOf(JsonPrimitive("Local"))), updated.last()["providers"])
+        assertEquals(JsonArray(listOf(JsonPrimitive("block"))), updated.last()["outbounds"])
+        assertFalse(updated.last().containsKey("use_all_providers"))
+        assertEquals(JsonPrimitive(draft.include), updated.last()["include"])
+        assertTrue(PolicyRegionPreset.HK.applyTo(document.initial, "block").useAll)
+        assertEquals("JP Auto", PolicyRegionPreset.JP.applyTo(draft, "block").tag)
+
+        val filter = Regex(draft.include)
+        assertTrue(filter.containsMatchIn("Local/HK01"))
+        assertTrue(filter.containsMatchIn("Local/香港 A2"))
+        assertTrue(filter.containsMatchIn("Local/[IPv6]🇭🇰 A6/DC"))
+        assertFalse(filter.containsMatchIn("HK Provider/JP02"))
+        assertFalse(filter.containsMatchIn("Local/THK Node"))
+    }
+
     @Test fun deletesOnlyTheConfirmedGroupWithTheCurrentRevision() = runBlocking {
         var writes = 0
         val original = parsePolicySection(source, "outbounds")

@@ -155,6 +155,17 @@
       "currentSha256": "217555916f18df6f399b8e335465369678732a1efaf34e6c737430c54b39e028"
     },
     {
+      "name": "geosite/tiktok",
+      "path": "src/module/config/singbox/rules/remote/geosite/tiktok.srs",
+      "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/tiktok.srs",
+      "repo": "MetaCubeX/meta-rules-dat",
+      "ref": "sing",
+      "sourcePath": "geo/geosite/tiktok.srs",
+      "metadataPath": "geo/geosite/tiktok.json",
+      "currentCommit": "d9e3c4c09747d325d28e9bfe8829011135cfbbbf",
+      "currentSha256": "74098a535fa12ebcb35afec90f058118072b3488d8068d7ef48cfd0f7b70b095"
+    },
+    {
       "name": "geosite/netflix",
       "path": "src/module/config/singbox/rules/remote/geosite/netflix.srs",
       "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/netflix.srs",

@@ -15,6 +15,8 @@ const serviceRules = [
   ['geosite/category-ai-!cn', 'AI', 'Proxy'],
   ['geosite/github', 'GitHub', 'Proxy'],
   ['geosite/youtube', 'YouTube', 'Proxy'],
+  ['geosite/tiktok', 'TikTok', 'Proxy'],
+  ['fcm', 'Google FCM', 'Proxy'],
   ['geosite/google', 'Google', 'Proxy'],
   ['geosite/telegram', 'Telegram', 'Proxy'],
   ['geosite/netflix', 'Netflix', 'Proxy'],
@@ -44,7 +46,7 @@ test('默认配置保留上游模式和 DNS 语义，并增加内置应用分流
   expected.outbounds = [
     { type: 'selector', tag: 'Proxy', outbounds: ['Auto', 'block', 'direct'], use_all_providers: true, default: 'block', interrupt_exist_connections: true },
     { type: 'urltest', tag: 'Auto', outbounds: ['block'], use_all_providers: true },
-    ...['AI', 'GitHub', 'YouTube', 'Google', 'Telegram', 'Netflix', 'Spotify', 'Bilibili'].map(tag => ({
+    ...['AI', 'GitHub', 'YouTube', 'TikTok', 'Google FCM', 'Google', 'Telegram', 'Netflix', 'Spotify', 'Bilibili'].map(tag => ({
       type: 'selector', tag, outbounds: ['Proxy', 'direct', 'block'], use_all_providers: true, default: tag === 'Bilibili' ? 'direct' : 'Proxy',
     })),
     { type: 'direct', tag: 'direct' },
@@ -54,6 +56,7 @@ test('默认配置保留上游模式和 DNS 语义，并增加内置应用分流
   for (const rule of expected.route.rule_set) {
     rule.path = rule.path.replace('./source/rule_set/', './rules/remote/').replace('./source/', './rules/local/')
   }
+  expected.route.rule_set.find(rule => rule.type === 'local').tag.push('fcm')
   const renameModes = rules => {
     for (const rule of rules) {
       if (rule.clash_mode === 'Global') rule.clash_mode = 'Proxy'
@@ -75,13 +78,20 @@ test('默认配置保留上游模式和 DNS 语义，并增加内置应用分流
   const directIndex = expected.route.rules.findIndex(rule => rule.clash_mode === 'Direct')
   expected.route.rules.unshift(...expected.route.rules.splice(directIndex, 1))
   expected.route.rule_set.find(rule => list(rule.tag).includes('geosite/google')).tag.push(
-    'geosite/github', 'geosite/youtube', 'geosite/telegram', 'geosite/spotify', 'geosite/bilibili', 'geosite/netflix',
+    'geosite/github', 'geosite/youtube', 'geosite/telegram', 'geosite/spotify', 'geosite/bilibili', 'geosite/netflix', 'geosite/tiktok',
   )
   const serviceIndex = expected.route.rules.findIndex(rule => list(rule.rule_set).includes('geosite/category-ai-!cn'))
   assert.ok(serviceIndex >= 0)
   expected.route.rules.splice(serviceIndex, 1,
     ...serviceRules.map(([rule_set, outbound]) => ({ rule_set, action: 'route', outbound })),
   )
+  expected.route.rules.splice(serviceIndex + 1, 0, {
+    package_name: ['com.openai.chatgpt', 'com.anthropic.claude', 'com.google.android.apps.bard',
+      'com.microsoft.copilot', 'ai.perplexity.app.android', 'ai.x.grok'],
+    action: 'route', outbound: 'AI',
+  })
+  const fcmIndex = expected.route.rules.findIndex(rule => rule.rule_set === 'fcm')
+  expected.route.rules.splice(fcmIndex + 1, 0, { network: 'tcp', port: [5228, 5229, 5230], action: 'route', outbound: 'Google FCM' })
   expected.route.rules.find(rule => list(rule.rule_set).includes('geoip/telegram')).outbound = 'Telegram'
   assert.deepEqual(config, expected)
 })
@@ -89,6 +99,9 @@ test('默认配置保留上游模式和 DNS 语义，并增加内置应用分流
 test('应用规则先于地域兜底，且每个应用组都有无需 Provider 的默认成员', () => {
   const region = config.route.rules.findIndex(rule => list(rule.rule_set).includes('geosite/cn'))
   const blockedAds = config.route.rules.findIndex(rule => rule.action === 'reject')
+  const dns = config.route.rules.findIndex(rule => rule.action === 'hijack-dns')
+  const aiApp = config.route.rules.findIndex(rule => rule.package_name?.includes('com.openai.chatgpt') && rule.outbound === 'AI')
+  assert.ok(dns >= 0 && dns < aiApp, 'DNS hijack must precede application routing')
   for (const [ruleSet, tag, fallback] of serviceRules) {
     const ruleIndex = config.route.rules.findIndex(rule => rule.rule_set === ruleSet && rule.outbound === tag)
     assert.ok(blockedAds < ruleIndex && ruleIndex < region, ruleSet)
